@@ -6,3 +6,11 @@ dist/
 .DS_Store
 coverage/
 *.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
