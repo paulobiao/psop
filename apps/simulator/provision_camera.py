@@ -20,7 +20,7 @@ import os
 import boto3
 
 # The AWS region must match where the Terraform infra was created.
-REGION = "us-east-1"
+REGION = os.getenv("AWS_REGION", "us-east-1")
 
 # Folder where this camera's certificate files will be saved locally.
 CERTS_DIR = "certs"
