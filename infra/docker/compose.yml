@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: psop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: psop
+      POSTGRES_PASSWORD: psop_dev
+      POSTGRES_DB: psop
+    ports:
+      - "5433:5432"
+    volumes:
+      - psop_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U psop -d psop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  psop_postgres_data:
