@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 # Must match the Terraform infra and the provisioning script.
-IOT_ENDPOINT = "a2lnbohul4xq78-ats.iot.us-east-1.amazonaws.com"
+IOT_ENDPOINT = os.getenv("AWS_IOT_ENDPOINT", "")
 IOT_PORT = 8883  # standard port for MQTT over TLS
 CERTS_DIR = "certs"
 
@@ -63,6 +63,12 @@ def on_publish(client, userdata, mid, reason_code=None, properties=None):
 
 
 def run(camera_id: str, site_id: str, interval: int):
+    if not IOT_ENDPOINT:
+        raise RuntimeError(
+            "AWS_IOT_ENDPOINT is not configured. "
+            "Set it before starting the simulator."
+        )
+
     # The three files that make mutual TLS work:
     ca_path = os.path.join(CERTS_DIR, "AmazonRootCA1.pem")     # trust AWS
     cert_path = os.path.join(CERTS_DIR, f"{camera_id}.cert.pem")   # camera identity

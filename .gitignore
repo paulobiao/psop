@@ -14,3 +14,8 @@ coverage/
 *.tfvars
 !*.tfvars.example
 crash.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
