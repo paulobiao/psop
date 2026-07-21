@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Site } from '../entities/site.entity';
+import type { Site } from '../../../../generated/prisma/client.js';
 import { SiteRepository } from '../repositories/site.repository';
 
 @Injectable()
