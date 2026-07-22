@@ -26,7 +26,8 @@ export class DeviceTelemetryService {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
     this.tableName =
-      configService.get<string>('DYNAMODB_STATUS_TABLE') ?? 'psop-status';
+      configService.get<string>('DYNAMODB_STATUS_TABLE') ??
+      'camera-fleet-monitor-status';
 
     this.offlineMultiplier = Number(
       configService.get<string>('TELEMETRY_OFFLINE_MULTIPLIER') ?? '2',
@@ -59,7 +60,7 @@ export class DeviceTelemetryService {
         new GetCommand({
           TableName: this.tableName,
           Key: {
-            site_id: device.site.code,
+            site_id: device.site.code.toLowerCase(),
             camera_id: device.externalId,
           },
         }),
