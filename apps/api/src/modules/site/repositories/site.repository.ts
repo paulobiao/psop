@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { Site } from '../../../../generated/prisma/client.js';
+import type {
+  Prisma,
+  Site,
+} from '../../../../generated/prisma/client.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 
 @Injectable()
@@ -8,11 +11,39 @@ export class SiteRepository {
 
   async findAll(): Promise<Site[]> {
     return this.prisma.site.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async findById(id: string): Promise<Site | null> {
+    return this.prisma.site.findFirst({
       where: {
+        id,
         deletedAt: null,
       },
-      orderBy: {
-        name: 'asc',
+    });
+  }
+
+  async create(data: Prisma.SiteUncheckedCreateInput): Promise<Site> {
+    return this.prisma.site.create({ data });
+  }
+
+  async update(
+    id: string,
+    data: Prisma.SiteUncheckedUpdateInput,
+  ): Promise<Site> {
+    return this.prisma.site.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async softDelete(id: string): Promise<Site> {
+    return this.prisma.site.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
       },
     });
   }
