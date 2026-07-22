@@ -11,11 +11,17 @@ resource "aws_dynamodb_table" "camera_status" {
   name         = "${var.project_name}-status"
   billing_mode = "PAY_PER_REQUEST" # on-demand: pay only for what you use, no idle cost
 
-  hash_key = "camera_id" # primary key: each camera has one unique row
+  hash_key  = "site_id"
+  range_key = "camera_id"
+
+  attribute {
+    name = "site_id"
+    type = "S"
+  }
 
   attribute {
     name = "camera_id"
-    type = "S" # S = String
+    type = "S"
   }
 
   tags = {
