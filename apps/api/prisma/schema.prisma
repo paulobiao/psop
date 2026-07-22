@@ -21,6 +21,23 @@ enum SiteStatus {
   ARCHIVED
 }
 
+enum DeviceType {
+  CAMERA
+  RECORDER
+  GATEWAY
+  ACCESS_CONTROLLER
+  SENSOR
+  INTERCOM
+  NETWORK_SWITCH
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  DECOMMISSIONED
+}
+
 model Organization {
   id        String             @id @default(uuid()) @db.Uuid
   name      String
@@ -38,6 +55,7 @@ model Site {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @map("organization_id") @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  devices        Device[]
   name           String
   code           String
   timezone       String       @default("UTC")
@@ -50,4 +68,28 @@ model Site {
   @@unique([organizationId, code])
   @@index([organizationId])
   @@map("sites")
+}
+
+model Device {
+  id                        String       @id @default(uuid()) @db.Uuid
+  siteId                    String       @map("site_id") @db.Uuid
+  site                      Site         @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  name                      String
+  externalId                String       @map("external_id")
+  deviceType                DeviceType   @map("device_type")
+  manufacturer              String?
+  model                     String?
+  firmwareVersion           String?      @map("firmware_version")
+  ipAddress                 String?      @map("ip_address")
+  serialNumber              String?      @map("serial_number")
+  status                    DeviceStatus @default(ACTIVE)
+  expectedHeartbeatInterval Int          @default(60) @map("expected_heartbeat_interval")
+  createdAt                 DateTime     @default(now()) @map("created_at")
+  updatedAt                 DateTime     @updatedAt @map("updated_at")
+  deletedAt                 DateTime?    @map("deleted_at")
+
+  @@unique([siteId, externalId])
+  @@index([siteId])
+  @@index([deviceType])
+  @@map("devices")
 }
