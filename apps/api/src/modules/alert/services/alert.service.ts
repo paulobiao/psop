@@ -1,0 +1,95 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type {
+  AlertSeverity,
+  AlertStatus,
+} from '../../../../generated/prisma/client.js';
+import { AlertRepository } from '../repositories/alert.repository.js';
+
+interface ConnectivityAlertInput {
+  deviceId: string;
+  deviceName: string;
+  siteCode: string;
+  externalId: string;
+  state: string;
+}
+
+@Injectable()
+export class AlertService {
+  constructor(private readonly alertRepository: AlertRepository) {}
+
+  async findAll(status?: string, deviceId?: string) {
+    return this.alertRepository.findAll({
+      status: this.parseStatus(status),
+      deviceId,
+    });
+  }
+
+  async findActive(deviceId?: string) {
+    return this.alertRepository.findAll({
+      status: 'OPEN',
+      deviceId,
+    });
+  }
+
+  async findOne(id: string) {
+    const alert = await this.alertRepository.findById(id);
+
+    if (!alert) {
+      throw new NotFoundException('Alert not found');
+    }
+
+    return alert;
+  }
+
+  async resolve(id: string) {
+    const alert = await this.findOne(id);
+
+    if (alert.status === 'RESOLVED') {
+      return alert;
+    }
+
+    return this.alertRepository.resolveById(id);
+  }
+
+  async openConnectivityAlert(input: ConnectivityAlertInput) {
+    const severity: AlertSeverity =
+      input.state === 'OFFLINE' ? 'CRITICAL' : 'WARNING';
+
+    const title =
+      input.state === 'OFFLINE'
+        ? `Camera ${input.externalId} is offline`
+        : `Camera ${input.externalId} is not reporting normally`;
+
+    const message =
+      `${input.deviceName} at site ${input.siteCode} ` +
+      `has connectivity state ${input.state}.`;
+
+    return this.alertRepository.openConnectivityAlert({
+      deviceId: input.deviceId,
+      severity,
+      title,
+      message,
+      connectivityState: input.state,
+    });
+  }
+
+  async resolveConnectivityAlert(deviceId: string) {
+    return this.alertRepository.resolveConnectivityAlert(deviceId);
+  }
+
+  private parseStatus(status?: string): AlertStatus | undefined {
+    if (!status) {
+      return undefined;
+    }
+
+    if (status !== 'OPEN' && status !== 'RESOLVED') {
+      throw new BadRequestException('Alert status must be OPEN or RESOLVED');
+    }
+
+    return status;
+  }
+}
