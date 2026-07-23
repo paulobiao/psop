@@ -12,15 +12,12 @@ import {
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { AlertService } from '../../alert/services/alert.service.js';
 import {
   DeviceRepository,
   DeviceWithSite,
-} from '../repositories/device.repository';
-import { DeviceTelemetryService } from './device-telemetry.service';
-
-type TelemetrySnapshot = Awaited<
-  ReturnType<DeviceTelemetryService['findFleet']>
->['devices'][number];
+} from '../repositories/device.repository.js';
+import { DeviceTelemetryService } from './device-telemetry.service.js';
 
 @Injectable()
 export class DeviceConnectivityEventsService {
@@ -34,6 +31,7 @@ export class DeviceConnectivityEventsService {
     configService: ConfigService,
     private readonly deviceRepository: DeviceRepository,
     private readonly telemetryService: DeviceTelemetryService,
+    private readonly alertService: AlertService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -97,6 +95,8 @@ export class DeviceConnectivityEventsService {
           }),
         );
 
+        await this.synchronizeAlert(snapshot);
+
         events.push(event);
       }
     } catch (error) {
@@ -151,6 +151,25 @@ export class DeviceConnectivityEventsService {
       device: this.deviceSummary(device),
       events: events!,
     };
+  }
+
+  private async synchronizeAlert(
+    snapshot: Awaited<
+      ReturnType<DeviceTelemetryService['findFleet']>
+    >['devices'][number],
+  ): Promise<void> {
+    if (snapshot.connectivity.state === 'ONLINE') {
+      await this.alertService.resolveConnectivityAlert(snapshot.device.id);
+      return;
+    }
+
+    await this.alertService.openConnectivityAlert({
+      deviceId: snapshot.device.id,
+      deviceName: snapshot.device.name,
+      siteCode: snapshot.device.siteCode,
+      externalId: snapshot.device.externalId,
+      state: snapshot.connectivity.state,
+    });
   }
 
   private async findLatestEvent(
