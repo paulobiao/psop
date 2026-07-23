@@ -66,6 +66,8 @@ export class DeviceConnectivityEventsService {
         const previousState = this.toString(previous?.current_state);
         const currentState = snapshot.connectivity.state;
 
+        await this.synchronizeAlert(snapshot);
+
         if (previousState === currentState) {
           continue;
         }
@@ -95,8 +97,6 @@ export class DeviceConnectivityEventsService {
             Item: event,
           }),
         );
-
-        await this.synchronizeAlert(snapshot);
 
         events.push(event);
       }
