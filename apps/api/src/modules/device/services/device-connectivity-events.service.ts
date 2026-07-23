@@ -11,6 +11,7 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
+  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { AlertService } from '../../alert/services/alert.service.js';
 import {
@@ -109,6 +110,36 @@ export class DeviceConnectivityEventsService {
       createdEvents: events.length,
       events,
     };
+  }
+
+  async findRecent(limit = 20) {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const items: Record<string, unknown>[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+
+    try {
+      do {
+        const response = await this.documentClient.send(
+          new ScanCommand({
+            TableName: this.tableName,
+            ExclusiveStartKey: exclusiveStartKey,
+          }),
+        );
+
+        items.push(...(response.Items ?? []));
+        exclusiveStartKey = response.LastEvaluatedKey;
+      } while (exclusiveStartKey && items.length < 1000);
+    } catch (error) {
+      this.handleStorageError(error);
+    }
+
+    return items
+      .sort(
+        (first, second) =>
+          this.toTimestamp(second.timestamp) -
+          this.toTimestamp(first.timestamp),
+      )
+      .slice(0, safeLimit);
   }
 
   async findByDeviceId(id: string) {
@@ -214,6 +245,19 @@ export class DeviceConnectivityEventsService {
     throw new ServiceUnavailableException(
       'Connectivity event storage is unavailable',
     );
+  }
+
+  private toTimestamp(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
   }
 
   private toString(value: unknown): string | null {
