@@ -19,3 +19,6 @@ crash.log
 __pycache__/
 *.py[cod]
 .venv/
+
+apps/simulator/certs/
+apps/simulator/.venv/
