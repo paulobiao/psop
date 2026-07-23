@@ -87,3 +87,32 @@ export interface OperationsOverview {
   activeAlerts: ActiveAlert[];
   recentEvents: ConnectivityEvent[];
 }
+
+
+export interface DeviceConnectivityEventsResponse {
+  device: {
+    id: string;
+    name: string;
+    externalId: string;
+    siteId: string;
+    siteCode: string;
+    siteName: string;
+  };
+  events: ConnectivityEvent[];
+}
+
+export interface DeviceAlert {
+  id: string;
+  deviceId: string;
+  type: string;
+  status: 'OPEN' | 'RESOLVED';
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  connectivityState: string | null;
+  openedAt: string;
+  lastDetectedAt: string;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
