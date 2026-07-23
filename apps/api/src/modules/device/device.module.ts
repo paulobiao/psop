@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DeviceController } from './controllers/device.controller';
 import { DeviceRepository } from './repositories/device.repository';
 import { DeviceConnectivityEventsService } from './services/device-connectivity-events.service';
+import { DeviceConnectivityMonitorService } from './services/device-connectivity-monitor.service';
 import { DeviceTelemetryService } from './services/device-telemetry.service';
 import { DeviceService } from './services/device.service';
 
@@ -11,6 +12,7 @@ import { DeviceService } from './services/device.service';
     DeviceService,
     DeviceTelemetryService,
     DeviceConnectivityEventsService,
+    DeviceConnectivityMonitorService,
     DeviceRepository,
   ],
   exports: [
