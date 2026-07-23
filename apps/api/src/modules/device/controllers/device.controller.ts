@@ -12,6 +12,7 @@ import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceService } from '../services/device.service';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
+import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
 
 @Controller({
   path: 'devices',
@@ -21,6 +22,7 @@ export class DeviceController {
   constructor(
     private readonly deviceService: DeviceService,
     private readonly deviceTelemetryService: DeviceTelemetryService,
+    private readonly connectivityEventsService: DeviceConnectivityEventsService,
   ) {}
 
   @Get()
@@ -31,6 +33,16 @@ export class DeviceController {
   @Get('telemetry')
   findFleetTelemetry() {
     return this.deviceTelemetryService.findFleet();
+  }
+
+  @Post('telemetry/evaluate')
+  evaluateConnectivity() {
+    return this.connectivityEventsService.evaluateFleet();
+  }
+
+  @Get(':id/connectivity-events')
+  findConnectivityEvents(@Param('id', ParseUUIDPipe) id: string) {
+    return this.connectivityEventsService.findByDeviceId(id);
   }
 
   @Get(':id/telemetry')
