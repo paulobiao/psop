@@ -19,6 +19,7 @@ import {
   useState,
 } from 'react';
 import { getOperationsOverview } from './api';
+import DeviceDetailsPanel from './DeviceDetailsPanel';
 import type {
   ActiveAlert,
   ConnectivityEvent,
@@ -114,12 +115,28 @@ function SummaryCard({
   );
 }
 
-function FleetRow({ item }: { item: FleetDevice }) {
+function FleetRow({
+  item,
+  onSelect,
+}: {
+  item: FleetDevice;
+  onSelect: () => void;
+}) {
   const temperature = item.telemetry?.temperatureC;
   const storage = item.telemetry?.storageUsedPct;
 
   return (
-    <tr>
+    <tr
+      className="fleet-row"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <td>
         <div className="device-name">
           <span className="device-name__icon">
@@ -251,6 +268,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] =
+    useState<string | null>(null);
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -475,6 +494,11 @@ function App() {
                         <FleetRow
                           key={item.device.id}
                           item={item}
+                          onSelect={() =>
+                            setSelectedDeviceId(
+                              item.device.id,
+                            )
+                          }
                         />
                       ))}
                     </tbody>
@@ -566,6 +590,13 @@ function App() {
           </>
         )}
       </main>
+
+      {selectedDeviceId && (
+        <DeviceDetailsPanel
+          deviceId={selectedDeviceId}
+          onClose={() => setSelectedDeviceId(null)}
+        />
+      )}
     </div>
   );
 }
