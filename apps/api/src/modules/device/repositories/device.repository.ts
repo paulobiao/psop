@@ -28,6 +28,26 @@ export class DeviceRepository {
     });
   }
 
+  async findAllCamerasWithSite(): Promise<DeviceWithSite[]> {
+    return this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        deviceType: 'CAMERA',
+      },
+      include: {
+        site: true,
+      },
+      orderBy: [
+        {
+          siteId: 'asc',
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+  }
+
   async findById(id: string): Promise<Device | null> {
     return this.prisma.device.findFirst({
       where: {

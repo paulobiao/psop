@@ -28,6 +28,11 @@ export class DeviceController {
     return this.deviceService.findAll();
   }
 
+  @Get('telemetry')
+  findFleetTelemetry() {
+    return this.deviceTelemetryService.findFleet();
+  }
+
   @Get(':id/telemetry')
   findTelemetry(@Param('id', ParseUUIDPipe) id: string) {
     return this.deviceTelemetryService.findByDeviceId(id);

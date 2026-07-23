@@ -7,10 +7,19 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { DeviceRepository } from '../repositories/device.repository';
+import {
+  BatchGetCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+} from '@aws-sdk/lib-dynamodb';
+import {
+  DeviceRepository,
+  DeviceWithSite,
+} from '../repositories/device.repository';
 
 type ConnectivityState = 'ONLINE' | 'OFFLINE' | 'NEVER_SEEN' | 'UNKNOWN';
+
+type TelemetryItem = Record<string, unknown>;
 
 @Injectable()
 export class DeviceTelemetryService {
@@ -40,6 +49,64 @@ export class DeviceTelemetryService {
     );
   }
 
+  async findFleet() {
+    const devices = await this.deviceRepository.findAllCamerasWithSite();
+
+    let items: TelemetryItem[];
+
+    try {
+      items = await this.readFleetItems(
+        devices.map((device) => ({
+          site_id: device.site.code.toLowerCase(),
+          camera_id: device.externalId,
+        })),
+      );
+    } catch (error) {
+      this.handleStorageError(error);
+    }
+
+    const telemetryByDevice = new Map(
+      items!.map((item) => [
+        this.telemetryKey(
+          this.toString(item.site_id),
+          this.toString(item.camera_id),
+        ),
+        item,
+      ]),
+    );
+
+    const fleet = devices.map((device) => {
+      const item = telemetryByDevice.get(
+        this.telemetryKey(device.site.code.toLowerCase(), device.externalId),
+      );
+
+      return this.buildResponse(device, item);
+    });
+
+    const counts: Record<ConnectivityState, number> = {
+      ONLINE: 0,
+      OFFLINE: 0,
+      NEVER_SEEN: 0,
+      UNKNOWN: 0,
+    };
+
+    for (const device of fleet) {
+      counts[device.connectivity.state] += 1;
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        total: fleet.length,
+        online: counts.ONLINE,
+        offline: counts.OFFLINE,
+        neverSeen: counts.NEVER_SEEN,
+        unknown: counts.UNKNOWN,
+      },
+      devices: fleet,
+    };
+  }
+
   async findByDeviceId(id: string) {
     const device = await this.deviceRepository.findByIdWithSite(id);
 
@@ -53,7 +120,7 @@ export class DeviceTelemetryService {
       );
     }
 
-    let item: Record<string, unknown> | undefined;
+    let item: TelemetryItem | undefined;
 
     try {
       const response = await this.documentClient.send(
@@ -68,14 +135,54 @@ export class DeviceTelemetryService {
 
       item = response.Item;
     } catch (error) {
-      this.logger.error(
-        'Unable to read device telemetry from DynamoDB',
-        error instanceof Error ? error.stack : String(error),
-      );
-
-      throw new ServiceUnavailableException('Telemetry storage is unavailable');
+      this.handleStorageError(error);
     }
 
+    return this.buildResponse(device, item);
+  }
+
+  private async readFleetItems(
+    keys: Array<Record<string, string>>,
+  ): Promise<TelemetryItem[]> {
+    const items: TelemetryItem[] = [];
+
+    for (let index = 0; index < keys.length; index += 100) {
+      let pendingKeys = keys.slice(index, index + 100);
+
+      for (
+        let attempt = 0;
+        attempt < 3 && pendingKeys.length > 0;
+        attempt += 1
+      ) {
+        const response = await this.documentClient.send(
+          new BatchGetCommand({
+            RequestItems: {
+              [this.tableName]: {
+                Keys: pendingKeys,
+              },
+            },
+          }),
+        );
+
+        items.push(...(response.Responses?.[this.tableName] ?? []));
+
+        pendingKeys =
+          (response.UnprocessedKeys?.[this.tableName]?.Keys as Array<
+            Record<string, string>
+          >) ?? [];
+      }
+
+      if (pendingKeys.length > 0) {
+        this.logger.warn(
+          `${pendingKeys.length} telemetry records were not returned by DynamoDB`,
+        );
+      }
+    }
+
+    return items;
+  }
+
+  private buildResponse(device: DeviceWithSite, item?: TelemetryItem) {
     const timestamp = this.toNumber(item?.timestamp);
     const now = Math.floor(Date.now() / 1000);
     const ageSeconds = timestamp === null ? null : Math.max(0, now - timestamp);
@@ -127,6 +234,19 @@ export class DeviceTelemetryService {
           }
         : null,
     };
+  }
+
+  private telemetryKey(siteId: string | null, cameraId: string | null): string {
+    return `${siteId ?? ''}:${cameraId ?? ''}`;
+  }
+
+  private handleStorageError(error: unknown): never {
+    this.logger.error(
+      'Unable to read device telemetry from DynamoDB',
+      error instanceof Error ? error.stack : String(error),
+    );
+
+    throw new ServiceUnavailableException('Telemetry storage is unavailable');
   }
 
   private toNumber(value: unknown): number | null {
