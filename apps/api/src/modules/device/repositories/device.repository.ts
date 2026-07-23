@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  Device,
-  Prisma,
-} from '../../../../generated/prisma/client.js';
+import type { Device, Prisma } from '../../../../generated/prisma/client.js';
 import { PrismaService } from '../../../database/prisma.service.js';
+
+export type DeviceWithSite = Prisma.DeviceGetPayload<{
+  include: {
+    site: true;
+  };
+}>;
 
 @Injectable()
 export class DeviceRepository {
@@ -30,6 +33,18 @@ export class DeviceRepository {
       where: {
         id,
         deletedAt: null,
+      },
+    });
+  }
+
+  async findByIdWithSite(id: string): Promise<DeviceWithSite | null> {
+    return this.prisma.device.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+      include: {
+        site: true,
       },
     });
   }

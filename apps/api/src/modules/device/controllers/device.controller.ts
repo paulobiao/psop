@@ -11,17 +11,26 @@ import {
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceService } from '../services/device.service';
+import { DeviceTelemetryService } from '../services/device-telemetry.service';
 
 @Controller({
   path: 'devices',
   version: '1',
 })
 export class DeviceController {
-  constructor(private readonly deviceService: DeviceService) {}
+  constructor(
+    private readonly deviceService: DeviceService,
+    private readonly deviceTelemetryService: DeviceTelemetryService,
+  ) {}
 
   @Get()
   findAll() {
     return this.deviceService.findAll();
+  }
+
+  @Get(':id/telemetry')
+  findTelemetry(@Param('id', ParseUUIDPipe) id: string) {
+    return this.deviceTelemetryService.findByDeviceId(id);
   }
 
   @Get(':id')
