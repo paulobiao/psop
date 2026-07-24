@@ -116,3 +116,67 @@ export interface DeviceAlert {
   createdAt: string;
   updatedAt: string;
 }
+
+
+export type DeviceType =
+  | 'CAMERA'
+  | 'RECORDER'
+  | 'GATEWAY'
+  | 'ACCESS_CONTROLLER'
+  | 'SENSOR'
+  | 'INTERCOM'
+  | 'NETWORK_SWITCH';
+
+export interface Site {
+  id: string;
+  organizationId: string;
+  name: string;
+  code: string;
+  timezone: string | null;
+  address: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface InventoryDevice {
+  id: string;
+  siteId: string;
+  name: string;
+  externalId: string;
+  deviceType: DeviceType;
+  manufacturer: string | null;
+  model: string | null;
+  firmwareVersion: string | null;
+  ipAddress: string | null;
+  serialNumber: string | null;
+  status: string;
+  expectedHeartbeatInterval: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface CreateSiteInput {
+  organizationId: string;
+  name: string;
+  code: string;
+  timezone?: string;
+  address?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'ARCHIVED';
+}
+
+export interface CreateDeviceInput {
+  siteId: string;
+  name: string;
+  externalId: string;
+  deviceType: DeviceType;
+  manufacturer?: string;
+  model?: string;
+  firmwareVersion?: string;
+  ipAddress?: string;
+  serialNumber?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'DECOMMISSIONED';
+  expectedHeartbeatInterval?: number;
+}

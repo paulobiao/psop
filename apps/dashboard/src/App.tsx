@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   Building2,
+  Boxes,
   Camera,
   CheckCircle2,
   Clock3,
@@ -20,6 +21,7 @@ import {
 } from 'react';
 import { getOperationsOverview } from './api';
 import DeviceDetailsPanel from './DeviceDetailsPanel';
+import InventoryPanel from './InventoryPanel';
 import type {
   ActiveAlert,
   ConnectivityEvent,
@@ -270,6 +272,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] =
     useState<string | null>(null);
+  const [inventoryOpen, setInventoryOpen] =
+    useState(false);
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -354,6 +358,15 @@ function App() {
         </div>
 
         <div className="topbar__actions">
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() => setInventoryOpen(true)}
+          >
+            <Boxes size={17} />
+            Inventory
+          </button>
+
           <div className="system-health">
             <span className="system-health__pulse" />
             <span>{healthLabel}</span>
@@ -590,6 +603,13 @@ function App() {
           </>
         )}
       </main>
+
+      {inventoryOpen && (
+        <InventoryPanel
+          onClose={() => setInventoryOpen(false)}
+          onChanged={() => void loadOverview(true)}
+        />
+      )}
 
       {selectedDeviceId && (
         <DeviceDetailsPanel
