@@ -1958,3 +1958,115 @@ tbody tr:hover {
     flex-direction: column;
   }
 }
+
+
+.fleet-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(4, 10, 20, 0.18);
+}
+
+.fleet-search {
+  display: flex;
+  width: min(360px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: #0b1423;
+}
+
+.fleet-search:focus-within,
+.fleet-select:focus-within {
+  border-color: rgba(77, 163, 255, 0.6);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.fleet-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.fleet-filter-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fleet-select {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: #0b1423;
+}
+
+.fleet-select select {
+  max-width: 190px;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.fleet-clear {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 100, 124, 0.28);
+  border-radius: 10px;
+  color: #ffc2cb;
+  background: var(--danger-soft);
+  font-weight: 700;
+}
+
+.fleet-clear:hover {
+  background: rgba(255, 100, 124, 0.2);
+}
+
+@media (max-width: 1100px) {
+  .fleet-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fleet-search {
+    width: 100%;
+  }
+
+  .fleet-filter-group {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 620px) {
+  .fleet-filter-group {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-select,
+  .fleet-clear {
+    width: 100%;
+  }
+
+  .fleet-select select {
+    width: 100%;
+    max-width: none;
+  }
+}
