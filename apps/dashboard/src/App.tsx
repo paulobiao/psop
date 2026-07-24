@@ -26,6 +26,7 @@ import { getOperationsOverview } from './api';
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
+import SiteDetailsPanel from './SiteDetailsPanel';
 import type {
   ActiveAlert,
   ConnectivityEvent,
@@ -298,6 +299,8 @@ function App() {
     useState(false);
   const [alertManagementOpen, setAlertManagementOpen] =
     useState(false);
+  const [siteDetailsOpen, setSiteDetailsOpen] =
+    useState(false);
   const [fleetSearch, setFleetSearch] = useState('');
   const [fleetSite, setFleetSite] = useState('ALL');
   const [fleetState, setFleetState] =
@@ -496,6 +499,15 @@ function App() {
         </div>
 
         <div className="topbar__actions">
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() => setSiteDetailsOpen(true)}
+          >
+            <Building2 size={17} />
+            Sites
+          </button>
+
           <button
             className="refresh-button"
             type="button"
@@ -875,6 +887,16 @@ function App() {
           </>
         )}
       </main>
+
+      {siteDetailsOpen && (
+        <SiteDetailsPanel
+          onClose={() => setSiteDetailsOpen(false)}
+          onSelectDevice={(deviceId) => {
+            setSiteDetailsOpen(false);
+            setSelectedDeviceId(deviceId);
+          }}
+        />
+      )}
 
       {alertManagementOpen && (
         <AlertManagementPanel
