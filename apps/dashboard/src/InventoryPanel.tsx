@@ -6,6 +6,7 @@ import {
   Cpu,
   HardDrive,
   LoaderCircle,
+  Pencil,
   Network,
   Radio,
   Trash2,
@@ -25,6 +26,7 @@ import {
   getDevices,
   getSites,
 } from './api';
+import InventoryEditPanel from './InventoryEditPanel';
 import type {
   CreateDeviceInput,
   DeviceType,
@@ -99,6 +101,10 @@ export default function InventoryPanel({
   const [success, setSuccess] = useState<string | null>(
     null,
   );
+  const [editingSite, setEditingSite] =
+    useState<Site | null>(null);
+  const [editingDevice, setEditingDevice] =
+    useState<InventoryDevice | null>(null);
 
   const [siteForm, setSiteForm] = useState({
     name: '',
@@ -406,6 +412,17 @@ export default function InventoryPanel({
                               'No location details'}
                           </p>
                         </div>
+
+                        <button
+                          type="button"
+                          className="inventory-card-edit"
+                          onClick={() =>
+                            setEditingSite(site)
+                          }
+                          aria-label={`Edit ${site.name}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
                       </article>
                     );
                   })}
@@ -463,16 +480,29 @@ export default function InventoryPanel({
                         {device.status}
                       </span>
 
-                      <button
-                        type="button"
-                        className="inventory-delete"
-                        onClick={() =>
-                          void handleDeleteDevice(device)
-                        }
-                        aria-label={`Remove ${device.name}`}
-                      >
-                        <Trash2 size={17} />
-                      </button>
+                      <div className="inventory-device__actions">
+                        <button
+                          type="button"
+                          className="inventory-edit-button"
+                          onClick={() =>
+                            setEditingDevice(device)
+                          }
+                          aria-label={`Edit ${device.name}`}
+                        >
+                          <Pencil size={17} />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="inventory-delete"
+                          onClick={() =>
+                            void handleDeleteDevice(device)
+                          }
+                          aria-label={`Remove ${device.name}`}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
                     </article>
                   ))}
 
@@ -783,6 +813,23 @@ export default function InventoryPanel({
           </div>
         )}
       </section>
+
+      {(editingSite || editingDevice) && (
+        <InventoryEditPanel
+          site={editingSite ?? undefined}
+          device={editingDevice ?? undefined}
+          sites={sites}
+          onClose={() => {
+            setEditingSite(null);
+            setEditingDevice(null);
+          }}
+          onSaved={() => {
+            setSuccess('Inventory updated successfully.');
+            void loadInventory();
+            onChanged();
+          }}
+        />
+      )}
     </div>
   );
 }
