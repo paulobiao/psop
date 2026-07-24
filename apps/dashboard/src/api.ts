@@ -140,3 +140,27 @@ export function deleteDevice(
     },
   );
 }
+
+
+export function updateSite(
+  siteId: string,
+  input: Partial<CreateSiteInput>,
+): Promise<Site> {
+  return requestJson<Site>(`/sites/${siteId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateDevice(
+  deviceId: string,
+  input: Partial<CreateDeviceInput>,
+): Promise<InventoryDevice> {
+  return requestJson<InventoryDevice>(
+    `/devices/${deviceId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+  );
+}
