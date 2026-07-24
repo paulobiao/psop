@@ -1,8 +1,12 @@
 import type {
+  CreateDeviceInput,
+  CreateSiteInput,
   DeviceAlert,
   DeviceConnectivityEventsResponse,
   FleetDevice,
+  InventoryDevice,
   OperationsOverview,
+  Site,
 } from './types';
 
 const apiBaseUrl = (
@@ -11,19 +15,39 @@ const apiBaseUrl = (
 
 async function requestJson<T>(
   path: string,
+  options: RequestInit = {},
   signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
     signal,
     headers: {
       Accept: 'application/json',
+      ...(options.body
+        ? { 'Content-Type': 'application/json' }
+        : {}),
+      ...options.headers,
     },
   });
 
   if (!response.ok) {
-    throw new Error(
-      `PSOP API returned HTTP ${response.status}`,
-    );
+    let message = `PSOP API returned HTTP ${response.status}`;
+
+    try {
+      const payload = (await response.json()) as {
+        message?: string | string[];
+      };
+
+      if (Array.isArray(payload.message)) {
+        message = payload.message.join(', ');
+      } else if (payload.message) {
+        message = payload.message;
+      }
+    } catch {
+      // Preserve the HTTP fallback message.
+    }
+
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;
@@ -34,6 +58,7 @@ export function getOperationsOverview(
 ): Promise<OperationsOverview> {
   return requestJson<OperationsOverview>(
     '/operations/overview',
+    {},
     signal,
   );
 }
@@ -44,6 +69,7 @@ export function getDeviceTelemetry(
 ): Promise<FleetDevice> {
   return requestJson<FleetDevice>(
     `/devices/${deviceId}/telemetry`,
+    {},
     signal,
   );
 }
@@ -54,6 +80,7 @@ export function getDeviceConnectivityEvents(
 ): Promise<DeviceConnectivityEventsResponse> {
   return requestJson<DeviceConnectivityEventsResponse>(
     `/devices/${deviceId}/connectivity-events`,
+    {},
     signal,
   );
 }
@@ -64,6 +91,52 @@ export function getDeviceAlerts(
 ): Promise<DeviceAlert[]> {
   return requestJson<DeviceAlert[]>(
     `/alerts?deviceId=${encodeURIComponent(deviceId)}`,
+    {},
     signal,
+  );
+}
+
+export function getSites(
+  signal?: AbortSignal,
+): Promise<Site[]> {
+  return requestJson<Site[]>('/sites', {}, signal);
+}
+
+export function createSite(
+  input: CreateSiteInput,
+): Promise<Site> {
+  return requestJson<Site>('/sites', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function getDevices(
+  signal?: AbortSignal,
+): Promise<InventoryDevice[]> {
+  return requestJson<InventoryDevice[]>(
+    '/devices',
+    {},
+    signal,
+  );
+}
+
+export function createDevice(
+  input: CreateDeviceInput,
+): Promise<InventoryDevice> {
+  return requestJson<InventoryDevice>('/devices', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteDevice(
+  deviceId: string,
+): Promise<InventoryDevice> {
+  return requestJson<InventoryDevice>(
+    `/devices/${deviceId}`,
+    {
+      method: 'DELETE',
+    },
   );
 }
