@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowUpDown,
   AlertTriangle,
   Building2,
   Boxes,
@@ -9,8 +10,10 @@ import {
   Database,
   Radio,
   RefreshCw,
+  Search,
   Server,
   ShieldAlert,
+  SlidersHorizontal,
   WifiOff,
 } from 'lucide-react';
 import {
@@ -32,6 +35,24 @@ import type {
 } from './types';
 
 const REFRESH_INTERVAL_MS = 15_000;
+
+type FleetStateFilter = ConnectivityState | 'ALL';
+
+type FleetSort =
+  | 'STATE'
+  | 'NAME'
+  | 'SITE'
+  | 'HEARTBEAT';
+
+const connectivityOrder: Record<
+  ConnectivityState,
+  number
+> = {
+  OFFLINE: 0,
+  NEVER_SEEN: 1,
+  UNKNOWN: 2,
+  ONLINE: 3,
+};
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -277,6 +298,12 @@ function App() {
     useState(false);
   const [alertManagementOpen, setAlertManagementOpen] =
     useState(false);
+  const [fleetSearch, setFleetSearch] = useState('');
+  const [fleetSite, setFleetSite] = useState('ALL');
+  const [fleetState, setFleetState] =
+    useState<FleetStateFilter>('ALL');
+  const [fleetSort, setFleetSort] =
+    useState<FleetSort>('STATE');
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -320,6 +347,114 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [loadOverview]);
+
+  const fleetSites = useMemo(() => {
+    if (!overview) {
+      return [];
+    }
+
+    const sites = new Map<string, string>();
+
+    for (const item of overview.fleet) {
+      sites.set(
+        item.device.siteId,
+        `${item.device.siteName} (${item.device.siteCode})`,
+      );
+    }
+
+    return Array.from(sites.entries()).sort(
+      ([, first], [, second]) =>
+        first.localeCompare(second),
+    );
+  }, [overview]);
+
+  const filteredFleet = useMemo(() => {
+    if (!overview) {
+      return [];
+    }
+
+    const normalizedSearch = fleetSearch
+      .trim()
+      .toLowerCase();
+
+    return overview.fleet
+      .filter((item) => {
+        const matchesSearch =
+          !normalizedSearch ||
+          [
+            item.device.name,
+            item.device.externalId,
+            item.device.siteName,
+            item.device.siteCode,
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(normalizedSearch);
+
+        const matchesSite =
+          fleetSite === 'ALL' ||
+          item.device.siteId === fleetSite;
+
+        const matchesState =
+          fleetState === 'ALL' ||
+          item.connectivity.state === fleetState;
+
+        return (
+          matchesSearch &&
+          matchesSite &&
+          matchesState
+        );
+      })
+      .sort((first, second) => {
+        if (fleetSort === 'NAME') {
+          return first.device.name.localeCompare(
+            second.device.name,
+          );
+        }
+
+        if (fleetSort === 'SITE') {
+          return (
+            first.device.siteName.localeCompare(
+              second.device.siteName,
+            ) ||
+            first.device.name.localeCompare(
+              second.device.name,
+            )
+          );
+        }
+
+        if (fleetSort === 'HEARTBEAT') {
+          return (
+            (second.connectivity.ageSeconds ?? -1) -
+            (first.connectivity.ageSeconds ?? -1)
+          );
+        }
+
+        return (
+          connectivityOrder[
+            first.connectivity.state
+          ] -
+            connectivityOrder[
+              second.connectivity.state
+            ] ||
+          first.device.name.localeCompare(
+            second.device.name,
+          )
+        );
+      });
+  }, [
+    overview,
+    fleetSearch,
+    fleetSite,
+    fleetState,
+    fleetSort,
+  ]);
+
+  const hasFleetFilters =
+    fleetSearch.trim() !== '' ||
+    fleetSite !== 'ALL' ||
+    fleetState !== 'ALL' ||
+    fleetSort !== 'STATE';
 
   const healthLabel = useMemo(() => {
     if (!overview) {
@@ -497,8 +632,127 @@ function App() {
                   </div>
 
                   <span className="panel__count">
-                    {overview.fleet.length} devices
+                    {filteredFleet.length ===
+                    overview.fleet.length
+                      ? `${overview.fleet.length} devices`
+                      : `${filteredFleet.length} of ${overview.fleet.length}`}
                   </span>
+                </div>
+
+                <div className="fleet-toolbar">
+                  <label className="fleet-search">
+                    <Search size={17} />
+                    <input
+                      value={fleetSearch}
+                      onChange={(event) =>
+                        setFleetSearch(
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Search camera, ID or site"
+                    />
+                  </label>
+
+                  <div className="fleet-filter-group">
+                    <label className="fleet-select">
+                      <SlidersHorizontal size={16} />
+                      <select
+                        value={fleetSite}
+                        onChange={(event) =>
+                          setFleetSite(
+                            event.target.value,
+                          )
+                        }
+                        aria-label="Filter by site"
+                      >
+                        <option value="ALL">
+                          All sites
+                        </option>
+
+                        {fleetSites.map(
+                          ([siteId, label]) => (
+                            <option
+                              key={siteId}
+                              value={siteId}
+                            >
+                              {label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+
+                    <label className="fleet-select">
+                      <select
+                        value={fleetState}
+                        onChange={(event) =>
+                          setFleetState(
+                            event.target
+                              .value as FleetStateFilter,
+                          )
+                        }
+                        aria-label="Filter by state"
+                      >
+                        <option value="ALL">
+                          All states
+                        </option>
+                        <option value="ONLINE">
+                          Online
+                        </option>
+                        <option value="OFFLINE">
+                          Offline
+                        </option>
+                        <option value="NEVER_SEEN">
+                          Never seen
+                        </option>
+                        <option value="UNKNOWN">
+                          Unknown
+                        </option>
+                      </select>
+                    </label>
+
+                    <label className="fleet-select">
+                      <ArrowUpDown size={16} />
+                      <select
+                        value={fleetSort}
+                        onChange={(event) =>
+                          setFleetSort(
+                            event.target
+                              .value as FleetSort,
+                          )
+                        }
+                        aria-label="Sort fleet"
+                      >
+                        <option value="STATE">
+                          Priority
+                        </option>
+                        <option value="NAME">
+                          Camera name
+                        </option>
+                        <option value="SITE">
+                          Site
+                        </option>
+                        <option value="HEARTBEAT">
+                          Heartbeat age
+                        </option>
+                      </select>
+                    </label>
+
+                    {hasFleetFilters && (
+                      <button
+                        type="button"
+                        className="fleet-clear"
+                        onClick={() => {
+                          setFleetSearch('');
+                          setFleetSite('ALL');
+                          setFleetState('ALL');
+                          setFleetSort('STATE');
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="table-wrapper">
@@ -515,7 +769,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {overview.fleet.map((item) => (
+                      {filteredFleet.map((item) => (
                         <FleetRow
                           key={item.device.id}
                           item={item}
@@ -530,12 +784,18 @@ function App() {
                   </table>
                 </div>
 
-                {overview.fleet.length === 0 && (
+                {filteredFleet.length === 0 && (
                   <div className="empty-state">
                     <Server size={26} />
-                    <strong>No cameras registered</strong>
+                    <strong>
+                      {overview.fleet.length === 0
+                        ? 'No cameras registered'
+                        : 'No cameras match the filters'}
+                    </strong>
                     <span>
-                      Add a camera device to begin monitoring.
+                      {overview.fleet.length === 0
+                        ? 'Add a camera device to begin monitoring.'
+                        : 'Adjust the search or clear the selected filters.'}
                     </span>
                   </div>
                 )}
