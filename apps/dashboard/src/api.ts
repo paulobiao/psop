@@ -164,3 +164,30 @@ export function updateDevice(
     },
   );
 }
+
+
+export function getAlerts(
+  status?: 'OPEN' | 'RESOLVED',
+  signal?: AbortSignal,
+): Promise<DeviceAlert[]> {
+  const query = status
+    ? `?status=${encodeURIComponent(status)}`
+    : '';
+
+  return requestJson<DeviceAlert[]>(
+    `/alerts${query}`,
+    {},
+    signal,
+  );
+}
+
+export function resolveAlert(
+  alertId: string,
+): Promise<DeviceAlert> {
+  return requestJson<DeviceAlert>(
+    `/alerts/${alertId}/resolve`,
+    {
+      method: 'PATCH',
+    },
+  );
+}

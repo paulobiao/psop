@@ -115,6 +115,17 @@ export interface DeviceAlert {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  device?: {
+    id: string;
+    name: string;
+    externalId: string;
+    deviceType: string;
+    site: {
+      id: string;
+      name: string;
+      code: string;
+    };
+  };
 }
 
 
