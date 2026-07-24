@@ -22,6 +22,7 @@ import {
 import { getOperationsOverview } from './api';
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
+import AlertManagementPanel from './AlertManagementPanel';
 import type {
   ActiveAlert,
   ConnectivityEvent,
@@ -274,6 +275,8 @@ function App() {
     useState<string | null>(null);
   const [inventoryOpen, setInventoryOpen] =
     useState(false);
+  const [alertManagementOpen, setAlertManagementOpen] =
+    useState(false);
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -365,6 +368,15 @@ function App() {
           >
             <Boxes size={17} />
             Inventory
+          </button>
+
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() => setAlertManagementOpen(true)}
+          >
+            <ShieldAlert size={17} />
+            Alerts
           </button>
 
           <div className="system-health">
@@ -603,6 +615,13 @@ function App() {
           </>
         )}
       </main>
+
+      {alertManagementOpen && (
+        <AlertManagementPanel
+          onClose={() => setAlertManagementOpen(false)}
+          onChanged={() => void loadOverview(true)}
+        />
+      )}
 
       {inventoryOpen && (
         <InventoryPanel
