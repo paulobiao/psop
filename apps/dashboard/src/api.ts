@@ -9,6 +9,33 @@ import type {
   Site,
 } from './types';
 
+export interface AuthUser {
+  id: string;
+  organizationId: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'OPERATOR' | 'VIEWER';
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  user: AuthUser;
+}
+
+const ACCESS_TOKEN_KEY = 'psop.accessToken';
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function setAccessToken(token: string): void {
+  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+}
+
+export function clearAccessToken(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+}
+
 const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL || '/api/v1'
 ).replace(/\/$/, '');
@@ -18,11 +45,16 @@ async function requestJson<T>(
   options: RequestInit = {},
   signal?: AbortSignal,
 ): Promise<T> {
+  const accessToken = getAccessToken();
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
     signal,
     headers: {
       Accept: 'application/json',
+      ...(accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : {}),
       ...(options.body
         ? { 'Content-Type': 'application/json' }
         : {}),
@@ -31,6 +63,16 @@ async function requestJson<T>(
   });
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      path !== '/auth/login'
+    ) {
+      clearAccessToken();
+      window.dispatchEvent(
+        new Event('psop:unauthorized'),
+      );
+    }
+
     let message = `PSOP API returned HTTP ${response.status}`;
 
     try {
@@ -190,4 +232,24 @@ export function resolveAlert(
       method: 'PATCH',
     },
   );
+}
+
+
+export function login(
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
+  return requestJson<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      password,
+    }),
+  });
+}
+
+export function getCurrentUser(
+  signal?: AbortSignal,
+): Promise<AuthUser> {
+  return requestJson<AuthUser>('/auth/me', {}, signal);
 }
