@@ -51,16 +51,15 @@ export class DeviceConnectivityEventsService {
     );
   }
 
-  async evaluateFleet() {
-    const fleet = await this.telemetryService.findFleet();
+  async evaluateFleet(organizationId?: string) {
+    const fleet = await this.telemetryService.findFleet(
+      organizationId,
+    );
     const events: Record<string, unknown>[] = [];
 
     try {
       for (const snapshot of fleet.devices) {
-        const partitionKey = this.eventPartitionKey(
-          snapshot.device.siteCode,
-          snapshot.device.externalId,
-        );
+        const partitionKey = snapshot.device.id;
 
         const previous = await this.findLatestEvent(partitionKey);
         const previousState = this.toString(previous?.current_state);
@@ -81,7 +80,7 @@ export class DeviceConnectivityEventsService {
           event_type: previous ? 'CONNECTIVITY_CHANGED' : 'INITIAL_STATE',
           device_id: snapshot.device.id,
           device_name: snapshot.device.name,
-          site_id: snapshot.device.siteCode.toLowerCase(),
+          site_id: snapshot.device.siteId,
           external_id: snapshot.device.externalId,
           previous_state: previousState,
           current_state: currentState,
@@ -112,8 +111,21 @@ export class DeviceConnectivityEventsService {
     };
   }
 
-  async findRecent(limit = 20) {
+  async findRecent(
+    limit = 20,
+    organizationId?: string,
+  ) {
     const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+    const allowedDeviceIds = organizationId
+      ? new Set(
+          (
+            await this.deviceRepository.findAllCamerasWithSite(
+              organizationId,
+            )
+          ).map((device) => device.id),
+        )
+      : null;
     const items: Record<string, unknown>[] = [];
     let exclusiveStartKey: Record<string, unknown> | undefined;
 
@@ -133,7 +145,15 @@ export class DeviceConnectivityEventsService {
       this.handleStorageError(error);
     }
 
-    return items
+    const scopedItems = allowedDeviceIds
+      ? items.filter((item) =>
+          allowedDeviceIds.has(
+            this.toString(item.device_id) ?? '',
+          ),
+        )
+      : items;
+
+    return scopedItems
       .sort(
         (first, second) =>
           this.toTimestamp(second.timestamp) -
@@ -142,8 +162,14 @@ export class DeviceConnectivityEventsService {
       .slice(0, safeLimit);
   }
 
-  async findByDeviceId(id: string) {
-    const device = await this.deviceRepository.findByIdWithSite(id);
+  async findByDeviceId(
+    id: string,
+    organizationId?: string,
+  ) {
+    const device = await this.deviceRepository.findByIdWithSite(
+      id,
+      organizationId,
+    );
 
     if (!device) {
       throw new NotFoundException('Device not found');
@@ -163,10 +189,7 @@ export class DeviceConnectivityEventsService {
           TableName: this.tableName,
           KeyConditionExpression: 'camera_id = :cameraId',
           ExpressionAttributeValues: {
-            ':cameraId': this.eventPartitionKey(
-              device.site.code,
-              device.externalId,
-            ),
+            ':cameraId': device.id,
           },
           ScanIndexForward: false,
           Limit: 50,
@@ -219,10 +242,6 @@ export class DeviceConnectivityEventsService {
     );
 
     return response.Items?.[0];
-  }
-
-  private eventPartitionKey(siteCode: string, externalId: string): string {
-    return `${siteCode.toLowerCase()}#${externalId}`;
   }
 
   private deviceSummary(device: DeviceWithSite) {

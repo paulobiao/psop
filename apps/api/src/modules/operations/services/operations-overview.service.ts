@@ -11,11 +11,14 @@ export class OperationsOverviewService {
     private readonly connectivityEventsService: DeviceConnectivityEventsService,
   ) {}
 
-  async getOverview() {
+  async getOverview(organizationId: string) {
     const [fleet, activeAlerts, recentEvents] = await Promise.all([
-      this.telemetryService.findFleet(),
-      this.alertService.findActive(),
-      this.connectivityEventsService.findRecent(20),
+      this.telemetryService.findFleet(organizationId),
+      this.alertService.findActive(organizationId),
+      this.connectivityEventsService.findRecent(
+        20,
+        organizationId,
+      ),
     ]);
 
     const criticalAlerts = activeAlerts.filter(

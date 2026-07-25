@@ -1,4 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
+import type { AuthUser } from '../../auth/auth.types.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { OperationsOverviewService } from '../services/operations-overview.service.js';
 
 @Controller({
@@ -11,7 +13,9 @@ export class OperationsController {
   ) {}
 
   @Get('overview')
-  getOverview() {
-    return this.operationsOverviewService.getOverview();
+  getOverview(@CurrentUser() user: AuthUser) {
+    return this.operationsOverviewService.getOverview(
+      user.organizationId,
+    );
   }
 }

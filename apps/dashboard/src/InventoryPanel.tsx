@@ -128,10 +128,6 @@ export default function InventoryPanel({
       status: 'ACTIVE',
     });
 
-  const organizationId =
-    import.meta.env.VITE_DEFAULT_ORGANIZATION_ID ||
-    '11111111-1111-4111-8111-111111111111';
-
   const loadInventory = useCallback(async () => {
     setLoading(true);
 
@@ -198,7 +194,6 @@ export default function InventoryPanel({
 
     try {
       const site = await createSite({
-        organizationId,
         name: siteForm.name.trim(),
         code: siteForm.code.trim().toUpperCase(),
         timezone: siteForm.timezone.trim() || undefined,
