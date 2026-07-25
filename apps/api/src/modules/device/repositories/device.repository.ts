@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { Device, Prisma } from '../../../../generated/prisma/client.js';
+import type {
+  Device,
+  Prisma,
+} from '../../../../generated/prisma/client.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 
 export type DeviceWithSite = Prisma.DeviceGetPayload<{
@@ -12,10 +15,20 @@ export type DeviceWithSite = Prisma.DeviceGetPayload<{
 export class DeviceRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<Device[]> {
+  async findAll(
+    organizationId?: string,
+  ): Promise<Device[]> {
     return this.prisma.device.findMany({
       where: {
         deletedAt: null,
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
       },
       orderBy: [
         {
@@ -28,11 +41,21 @@ export class DeviceRepository {
     });
   }
 
-  async findAllCamerasWithSite(): Promise<DeviceWithSite[]> {
+  async findAllCamerasWithSite(
+    organizationId?: string,
+  ): Promise<DeviceWithSite[]> {
     return this.prisma.device.findMany({
       where: {
         deletedAt: null,
         deviceType: 'CAMERA',
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
       },
       include: {
         site: true,
@@ -48,20 +71,42 @@ export class DeviceRepository {
     });
   }
 
-  async findById(id: string): Promise<Device | null> {
+  async findById(
+    id: string,
+    organizationId?: string,
+  ): Promise<Device | null> {
     return this.prisma.device.findFirst({
       where: {
         id,
         deletedAt: null,
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
       },
     });
   }
 
-  async findByIdWithSite(id: string): Promise<DeviceWithSite | null> {
+  async findByIdWithSite(
+    id: string,
+    organizationId?: string,
+  ): Promise<DeviceWithSite | null> {
     return this.prisma.device.findFirst({
       where: {
         id,
         deletedAt: null,
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
       },
       include: {
         site: true,
@@ -69,7 +114,27 @@ export class DeviceRepository {
     });
   }
 
-  async create(data: Prisma.DeviceUncheckedCreateInput): Promise<Device> {
+  async siteBelongsToOrganization(
+    siteId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const site = await this.prisma.site.findFirst({
+      where: {
+        id: siteId,
+        organizationId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return Boolean(site);
+  }
+
+  async create(
+    data: Prisma.DeviceUncheckedCreateInput,
+  ): Promise<Device> {
     return this.prisma.device.create({
       data,
     });

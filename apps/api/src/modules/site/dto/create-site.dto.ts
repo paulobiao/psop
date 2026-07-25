@@ -3,13 +3,9 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
 } from 'class-validator';
 
 export class CreateSiteDto {
-  @IsUUID()
-  organizationId!: string;
-
   @IsString()
   @IsNotEmpty()
   name!: string;

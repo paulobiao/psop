@@ -170,7 +170,6 @@ export interface InventoryDevice {
 }
 
 export interface CreateSiteInput {
-  organizationId: string;
   name: string;
   code: string;
   timezone?: string;

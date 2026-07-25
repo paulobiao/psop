@@ -19,24 +19,41 @@ interface ConnectivityAlertInput {
 
 @Injectable()
 export class AlertService {
-  constructor(private readonly alertRepository: AlertRepository) {}
+  constructor(
+    private readonly alertRepository: AlertRepository,
+  ) {}
 
-  async findAll(status?: string, deviceId?: string) {
+  async findAll(
+    organizationId: string,
+    status?: string,
+    deviceId?: string,
+  ) {
     return this.alertRepository.findAll({
+      organizationId,
       status: this.parseStatus(status),
       deviceId,
     });
   }
 
-  async findActive(deviceId?: string) {
+  async findActive(
+    organizationId: string,
+    deviceId?: string,
+  ) {
     return this.alertRepository.findAll({
+      organizationId,
       status: 'OPEN',
       deviceId,
     });
   }
 
-  async findOne(id: string) {
-    const alert = await this.alertRepository.findById(id);
+  async findOne(
+    organizationId: string,
+    id: string,
+  ) {
+    const alert = await this.alertRepository.findById(
+      id,
+      organizationId,
+    );
 
     if (!alert) {
       throw new NotFoundException('Alert not found');
@@ -45,8 +62,14 @@ export class AlertService {
     return alert;
   }
 
-  async resolve(id: string) {
-    const alert = await this.findOne(id);
+  async resolve(
+    organizationId: string,
+    id: string,
+  ) {
+    const alert = await this.findOne(
+      organizationId,
+      id,
+    );
 
     if (alert.status === 'RESOLVED') {
       return alert;
@@ -55,9 +78,13 @@ export class AlertService {
     return this.alertRepository.resolveById(id);
   }
 
-  async openConnectivityAlert(input: ConnectivityAlertInput) {
+  async openConnectivityAlert(
+    input: ConnectivityAlertInput,
+  ) {
     const severity: AlertSeverity =
-      input.state === 'OFFLINE' ? 'CRITICAL' : 'WARNING';
+      input.state === 'OFFLINE'
+        ? 'CRITICAL'
+        : 'WARNING';
 
     const title =
       input.state === 'OFFLINE'
@@ -78,16 +105,22 @@ export class AlertService {
   }
 
   async resolveConnectivityAlert(deviceId: string) {
-    return this.alertRepository.resolveConnectivityAlert(deviceId);
+    return this.alertRepository.resolveConnectivityAlert(
+      deviceId,
+    );
   }
 
-  private parseStatus(status?: string): AlertStatus | undefined {
+  private parseStatus(
+    status?: string,
+  ): AlertStatus | undefined {
     if (!status) {
       return undefined;
     }
 
     if (status !== 'OPEN' && status !== 'RESOLVED') {
-      throw new BadRequestException('Alert status must be OPEN or RESOLVED');
+      throw new BadRequestException(
+        'Alert status must be OPEN or RESOLVED',
+      );
     }
 
     return status;

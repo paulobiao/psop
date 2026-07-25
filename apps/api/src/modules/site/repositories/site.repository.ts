@@ -9,23 +9,32 @@ import { PrismaService } from '../../../database/prisma.service.js';
 export class SiteRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<Site[]> {
+  async findAll(organizationId: string): Promise<Site[]> {
     return this.prisma.site.findMany({
-      where: { deletedAt: null },
+      where: {
+        organizationId,
+        deletedAt: null,
+      },
       orderBy: { name: 'asc' },
     });
   }
 
-  async findById(id: string): Promise<Site | null> {
+  async findById(
+    id: string,
+    organizationId: string,
+  ): Promise<Site | null> {
     return this.prisma.site.findFirst({
       where: {
         id,
+        organizationId,
         deletedAt: null,
       },
     });
   }
 
-  async create(data: Prisma.SiteUncheckedCreateInput): Promise<Site> {
+  async create(
+    data: Prisma.SiteUncheckedCreateInput,
+  ): Promise<Site> {
     return this.prisma.site.create({ data });
   }
 

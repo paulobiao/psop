@@ -49,16 +49,18 @@ export class DeviceTelemetryService {
     );
   }
 
-  async findFleet() {
-    const devices = await this.deviceRepository.findAllCamerasWithSite();
+  async findFleet(organizationId?: string) {
+    const devices = await this.deviceRepository.findAllCamerasWithSite(
+      organizationId,
+    );
 
     let items: TelemetryItem[];
 
     try {
       items = await this.readFleetItems(
         devices.map((device) => ({
-          site_id: device.site.code.toLowerCase(),
-          camera_id: device.externalId,
+          site_id: device.siteId,
+          camera_id: device.id,
         })),
       );
     } catch (error) {
@@ -77,7 +79,7 @@ export class DeviceTelemetryService {
 
     const fleet = devices.map((device) => {
       const item = telemetryByDevice.get(
-        this.telemetryKey(device.site.code.toLowerCase(), device.externalId),
+        this.telemetryKey(device.siteId, device.id),
       );
 
       return this.buildResponse(device, item);
@@ -107,8 +109,14 @@ export class DeviceTelemetryService {
     };
   }
 
-  async findByDeviceId(id: string) {
-    const device = await this.deviceRepository.findByIdWithSite(id);
+  async findByDeviceId(
+    id: string,
+    organizationId?: string,
+  ) {
+    const device = await this.deviceRepository.findByIdWithSite(
+      id,
+      organizationId,
+    );
 
     if (!device) {
       throw new NotFoundException('Device not found');
@@ -127,8 +135,8 @@ export class DeviceTelemetryService {
         new GetCommand({
           TableName: this.tableName,
           Key: {
-            site_id: device.site.code.toLowerCase(),
-            camera_id: device.externalId,
+            site_id: device.siteId,
+            camera_id: device.id,
           },
         }),
       );

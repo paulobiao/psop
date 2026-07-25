@@ -8,12 +8,18 @@ import { SiteRepository } from '../repositories/site.repository';
 export class SiteService {
   constructor(private readonly siteRepository: SiteRepository) {}
 
-  async findAll(): Promise<Site[]> {
-    return this.siteRepository.findAll();
+  async findAll(organizationId: string): Promise<Site[]> {
+    return this.siteRepository.findAll(organizationId);
   }
 
-  async findOne(id: string): Promise<Site> {
-    const site = await this.siteRepository.findById(id);
+  async findOne(
+    organizationId: string,
+    id: string,
+  ): Promise<Site> {
+    const site = await this.siteRepository.findById(
+      id,
+      organizationId,
+    );
 
     if (!site) {
       throw new NotFoundException('Site not found');
@@ -22,17 +28,32 @@ export class SiteService {
     return site;
   }
 
-  async create(data: CreateSiteDto): Promise<Site> {
-    return this.siteRepository.create(data);
+  async create(
+    organizationId: string,
+    data: CreateSiteDto,
+  ): Promise<Site> {
+    return this.siteRepository.create({
+      ...data,
+      organizationId,
+    });
   }
 
-  async update(id: string, data: UpdateSiteDto): Promise<Site> {
-    await this.findOne(id);
+  async update(
+    organizationId: string,
+    id: string,
+    data: UpdateSiteDto,
+  ): Promise<Site> {
+    await this.findOne(organizationId, id);
+
     return this.siteRepository.update(id, data);
   }
 
-  async remove(id: string): Promise<Site> {
-    await this.findOne(id);
+  async remove(
+    organizationId: string,
+    id: string,
+  ): Promise<Site> {
+    await this.findOne(organizationId, id);
+
     return this.siteRepository.softDelete(id);
   }
 }

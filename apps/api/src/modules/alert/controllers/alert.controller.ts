@@ -6,6 +6,9 @@ import {
   Patch,
   Query,
 } from '@nestjs/common';
+import type { AuthUser } from '../../auth/auth.types.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { AlertService } from '../services/alert.service.js';
 
 @Controller({
@@ -13,28 +16,54 @@ import { AlertService } from '../services/alert.service.js';
   version: '1',
 })
 export class AlertController {
-  constructor(private readonly alertService: AlertService) {}
+  constructor(
+    private readonly alertService: AlertService,
+  ) {}
 
   @Get('active')
-  findActive(@Query('deviceId') deviceId?: string) {
-    return this.alertService.findActive(deviceId);
+  findActive(
+    @CurrentUser() user: AuthUser,
+    @Query('deviceId') deviceId?: string,
+  ) {
+    return this.alertService.findActive(
+      user.organizationId,
+      deviceId,
+    );
   }
 
   @Get()
   findAll(
+    @CurrentUser() user: AuthUser,
     @Query('status') status?: string,
     @Query('deviceId') deviceId?: string,
   ) {
-    return this.alertService.findAll(status, deviceId);
+    return this.alertService.findAll(
+      user.organizationId,
+      status,
+      deviceId,
+    );
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.alertService.findOne(id);
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.alertService.findOne(
+      user.organizationId,
+      id,
+    );
   }
 
+  @Roles('ADMIN', 'OPERATOR')
   @Patch(':id/resolve')
-  resolve(@Param('id', ParseUUIDPipe) id: string) {
-    return this.alertService.resolve(id);
+  resolve(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.alertService.resolve(
+      user.organizationId,
+      id,
+    );
   }
 }

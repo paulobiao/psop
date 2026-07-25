@@ -19,6 +19,7 @@ export type AlertWithDevice = Prisma.AlertGetPayload<{
 interface AlertFilters {
   status?: AlertStatus;
   deviceId?: string;
+  organizationId?: string;
 }
 
 interface OpenConnectivityAlertInput {
@@ -33,11 +34,24 @@ interface OpenConnectivityAlertInput {
 export class AlertRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(filters: AlertFilters = {}): Promise<AlertWithDevice[]> {
+  async findAll(
+    filters: AlertFilters = {},
+  ): Promise<AlertWithDevice[]> {
     return this.prisma.alert.findMany({
       where: {
         status: filters.status,
         deviceId: filters.deviceId,
+        ...(filters.organizationId
+          ? {
+              device: {
+                deletedAt: null,
+                site: {
+                  organizationId: filters.organizationId,
+                  deletedAt: null,
+                },
+              },
+            }
+          : {}),
       },
       include: {
         device: {
@@ -52,10 +66,24 @@ export class AlertRepository {
     });
   }
 
-  async findById(id: string): Promise<AlertWithDevice | null> {
-    return this.prisma.alert.findUnique({
+  async findById(
+    id: string,
+    organizationId?: string,
+  ): Promise<AlertWithDevice | null> {
+    return this.prisma.alert.findFirst({
       where: {
         id,
+        ...(organizationId
+          ? {
+              device: {
+                deletedAt: null,
+                site: {
+                  organizationId,
+                  deletedAt: null,
+                },
+              },
+            }
+          : {}),
       },
       include: {
         device: {
@@ -71,18 +99,21 @@ export class AlertRepository {
     input: OpenConnectivityAlertInput,
   ): Promise<AlertWithDevice> {
     const now = new Date();
-    const dedupKey = `${input.deviceId}:DEVICE_CONNECTIVITY`;
+    const dedupKey =
+      `${input.deviceId}:DEVICE_CONNECTIVITY`;
 
     return this.prisma.alert.upsert({
       where: {
         dedupKey,
       },
       update: {
+        status: 'OPEN',
         severity: input.severity,
         title: input.title,
         message: input.message,
         connectivityState: input.connectivityState,
         lastDetectedAt: now,
+        resolvedAt: null,
       },
       create: {
         deviceId: input.deviceId,
@@ -142,7 +173,9 @@ export class AlertRepository {
     });
   }
 
-  async resolveById(id: string): Promise<AlertWithDevice> {
+  async resolveById(
+    id: string,
+  ): Promise<AlertWithDevice> {
     return this.prisma.alert.update({
       where: {
         id,
