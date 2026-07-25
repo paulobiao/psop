@@ -1,4 +1,5 @@
 import {
+  Users,
   Activity,
   ArrowUpDown,
   AlertTriangle,
@@ -27,6 +28,8 @@ import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
 import SiteDetailsPanel from './SiteDetailsPanel';
+import UserManagementPanel from './UserManagementPanel';
+import { useAuthUser } from './AuthGate';
 import type {
   ActiveAlert,
   ConnectivityEvent,
@@ -288,6 +291,7 @@ function LoadingState() {
 }
 
 function App() {
+  const authUser = useAuthUser();
   const [overview, setOverview] =
     useState<OperationsOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -298,6 +302,8 @@ function App() {
   const [inventoryOpen, setInventoryOpen] =
     useState(false);
   const [alertManagementOpen, setAlertManagementOpen] =
+    useState(false);
+  const [userManagementOpen, setUserManagementOpen] =
     useState(false);
   const [siteDetailsOpen, setSiteDetailsOpen] =
     useState(false);
@@ -499,6 +505,18 @@ function App() {
         </div>
 
         <div className="topbar__actions">
+          {authUser.role === 'ADMIN' && (
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() =>
+                setUserManagementOpen(true)
+              }
+            >
+              <Users size={17} />
+              Users
+            </button>
+          )}
           <button
             className="refresh-button"
             type="button"
@@ -887,6 +905,15 @@ function App() {
           </>
         )}
       </main>
+
+      {userManagementOpen && (
+        <UserManagementPanel
+          currentUserId={authUser.id}
+          onClose={() =>
+            setUserManagementOpen(false)
+          }
+        />
+      )}
 
       {siteDetailsOpen && (
         <SiteDetailsPanel

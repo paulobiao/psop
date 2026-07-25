@@ -2766,3 +2766,458 @@ tbody tr:hover {
     display: none;
   }
 }
+
+
+.user-management-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(2, 8, 18, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.user-management-modal {
+  width: min(1280px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #0d1727;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+}
+
+.user-management-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 23px 25px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 23, 39, 0.97);
+  backdrop-filter: blur(18px);
+}
+
+.user-management-title {
+  display: flex;
+  gap: 13px;
+}
+
+.user-management-title > span,
+.user-form-heading > span {
+  display: grid;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.user-management-header h2,
+.user-form-heading h3,
+.user-password-panel h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+}
+
+.user-management-header h2 {
+  font-size: 24px;
+}
+
+.user-management-header p,
+.user-form-heading p,
+.user-password-panel p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.user-management-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-management-summary article {
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.user-management-summary span,
+.user-management-summary strong {
+  display: block;
+}
+
+.user-management-summary span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.user-management-summary strong {
+  margin-top: 5px;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 21px;
+}
+
+.user-management-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 610px;
+}
+
+.user-management-list {
+  padding: 15px;
+  border-right: 1px solid var(--border);
+  background: rgba(4, 10, 20, 0.2);
+}
+
+.user-create-button {
+  display: flex;
+  width: 100%;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(77, 163, 255, 0.38);
+  border-radius: 10px;
+  color: #dff0ff;
+  font-weight: 700;
+  background: var(--accent-soft);
+}
+
+.user-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.user-list-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  text-align: left;
+  background: transparent;
+}
+
+.user-list-card:hover,
+.user-list-card--active {
+  border-color: rgba(77, 163, 255, 0.3);
+  background: var(--accent-soft);
+}
+
+.user-avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(77, 163, 255, 0.12);
+}
+
+.user-list-card strong,
+.user-list-card small,
+.user-list-meta {
+  display: block;
+}
+
+.user-list-card strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-list-card small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-list-meta {
+  margin-top: 6px;
+  color: #718198;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.user-management-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.user-management-content {
+  padding: 21px;
+}
+
+.user-management-form,
+.user-password-panel {
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+}
+
+.user-management-form {
+  padding: 20px;
+}
+
+.user-form-heading {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-form-heading h3,
+.user-password-panel h3 {
+  font-size: 18px;
+}
+
+.user-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px 0;
+}
+
+.user-form-grid label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.user-form-grid label > span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.user-form-grid input,
+.user-form-grid select,
+.user-password-control input {
+  width: 100%;
+  min-height: 43px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: 0;
+  color: var(--text-strong);
+  font: inherit;
+  background: rgba(4, 10, 20, 0.5);
+}
+
+.user-form-grid input,
+.user-form-grid select {
+  padding: 0 12px;
+}
+
+.user-form-grid input:focus,
+.user-form-grid select:focus,
+.user-password-control div:focus-within {
+  border-color: rgba(77, 163, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.09);
+}
+
+.user-form-grid select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.user-form-grid label small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.user-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 17px;
+  border-top: 1px solid var(--border);
+}
+
+.user-primary-button,
+.user-secondary-button,
+.user-danger-button,
+.user-password-control button {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.user-primary-button {
+  border: 1px solid rgba(77, 163, 255, 0.42);
+  color: #f5faff;
+  background: #1f6fbd;
+}
+
+.user-secondary-button {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: transparent;
+}
+
+.user-danger-button {
+  margin-right: auto;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.11);
+}
+
+.user-primary-button:disabled,
+.user-danger-button:disabled,
+.user-password-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.user-current-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  border-radius: 9px;
+  color: #86efac;
+  font-size: 10px;
+  background: rgba(34, 197, 94, 0.07);
+}
+
+.user-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.user-password-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(320px, 1.2fr);
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+}
+
+.user-password-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.user-password-control > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: rgba(4, 10, 20, 0.5);
+}
+
+.user-password-control input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.user-password-control button {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: rgba(148, 163, 184, 0.06);
+}
+
+@media (max-width: 850px) {
+  .user-management-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .user-management-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .user-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .user-management-overlay {
+    padding: 0;
+  }
+
+  .user-management-modal {
+    min-height: 100vh;
+    max-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .user-management-header {
+    padding: 18px 15px;
+  }
+
+  .user-management-title > span {
+    display: none;
+  }
+
+  .user-management-summary,
+  .user-form-grid,
+  .user-list,
+  .user-password-panel,
+  .user-password-control {
+    grid-template-columns: 1fr;
+  }
+
+  .user-management-content {
+    padding: 14px;
+  }
+
+  .user-form-actions {
+    flex-wrap: wrap;
+  }
+
+  .user-danger-button {
+    width: 100%;
+    margin-right: 0;
+  }
+}
