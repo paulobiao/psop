@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator.js';
 
+@Public()
 @Controller({
   path: 'health',
   version: '1',

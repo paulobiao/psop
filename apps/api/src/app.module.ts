@@ -5,6 +5,7 @@ import { SiteModule } from './modules/site/site.module';
 import { DeviceModule } from './modules/device/device.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { PrismaModule } from './database/prisma.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { PrismaModule } from './database/prisma.module';
       isGlobal: true,
     }),
     PrismaModule,
+    AuthModule,
     HealthModule,
     SiteModule,
     DeviceModule,
