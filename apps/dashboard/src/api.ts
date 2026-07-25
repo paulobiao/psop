@@ -22,6 +22,41 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export type ManagedUserRole =
+  | 'ADMIN'
+  | 'OPERATOR'
+  | 'VIEWER';
+
+export type ManagedUserStatus =
+  | 'ACTIVE'
+  | 'DISABLED';
+
+export interface ManagedUser {
+  id: string;
+  organizationId: string;
+  name: string;
+  email: string;
+  role: ManagedUserRole;
+  status: ManagedUserStatus;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateUserInput {
+  name: string;
+  email: string;
+  password: string;
+  role: ManagedUserRole;
+}
+
+export interface UpdateUserInput {
+  name?: string;
+  email?: string;
+  role?: ManagedUserRole;
+  status?: ManagedUserStatus;
+}
+
 const ACCESS_TOKEN_KEY = 'psop.accessToken';
 
 export function getAccessToken(): string | null {
@@ -252,4 +287,61 @@ export function getCurrentUser(
   signal?: AbortSignal,
 ): Promise<AuthUser> {
   return requestJson<AuthUser>('/auth/me', {}, signal);
+}
+
+
+export function getUsers(
+  signal?: AbortSignal,
+): Promise<ManagedUser[]> {
+  return requestJson<ManagedUser[]>(
+    '/users',
+    {},
+    signal,
+  );
+}
+
+export function createUser(
+  input: CreateUserInput,
+): Promise<ManagedUser> {
+  return requestJson<ManagedUser>('/users', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateUser(
+  userId: string,
+  input: UpdateUserInput,
+): Promise<ManagedUser> {
+  return requestJson<ManagedUser>(
+    `/users/${userId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function changeUserPassword(
+  userId: string,
+  password: string,
+): Promise<ManagedUser> {
+  return requestJson<ManagedUser>(
+    `/users/${userId}/password`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ password }),
+    },
+  );
+}
+
+export function deleteUser(
+  userId: string,
+): Promise<ManagedUser> {
+  return requestJson<ManagedUser>(
+    `/users/${userId}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }

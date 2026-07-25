@@ -6,6 +6,7 @@ import { DeviceModule } from './modules/device/device.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuthModule } from './modules/auth/auth.module';
     }),
     PrismaModule,
     AuthModule,
+    UserModule,
     HealthModule,
     SiteModule,
     DeviceModule,

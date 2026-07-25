@@ -7,8 +7,10 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import {
+  createContext,
   type FormEvent,
   type ReactNode,
+  useContext,
   useEffect,
   useState,
 } from 'react';
@@ -23,6 +25,21 @@ import {
 
 interface AuthGateProps {
   children: ReactNode;
+}
+
+const AuthUserContext =
+  createContext<AuthUser | null>(null);
+
+export function useAuthUser(): AuthUser {
+  const user = useContext(AuthUserContext);
+
+  if (!user) {
+    throw new Error(
+      'Authenticated user context is unavailable',
+    );
+  }
+
+  return user;
 }
 
 export default function AuthGate({
@@ -213,10 +230,11 @@ export default function AuthGate({
   }
 
   return (
-    <>
-      {children}
+    <AuthUserContext.Provider value={user}>
+      <>
+        {children}
 
-      <aside className="session-control">
+        <aside className="session-control">
         <ShieldCheck size={17} />
 
         <div>
@@ -232,7 +250,8 @@ export default function AuthGate({
         >
           <LogOut size={16} />
         </button>
-      </aside>
-    </>
+        </aside>
+      </>
+    </AuthUserContext.Provider>
   );
 }
