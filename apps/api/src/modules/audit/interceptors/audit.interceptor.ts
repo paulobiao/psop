@@ -110,6 +110,18 @@ export class AuditInterceptor
   }
 
   private resolveEntityType(path: string): string {
+    const cleanPath = path.split('?')[0];
+
+    if (
+      cleanPath.includes('/auth/sessions') ||
+      cleanPath.includes('/auth/users/') &&
+        cleanPath.endsWith('/sessions') ||
+      cleanPath.endsWith('/auth/logout') ||
+      cleanPath.endsWith('/auth/logout-all')
+    ) {
+      return 'SESSION';
+    }
+
     const segments = path
       .split('?')[0]
       .split('/')
@@ -142,6 +154,23 @@ export class AuditInterceptor
     entityType: string,
   ): string {
     const cleanPath = path.split('?')[0];
+
+    if (
+      entityType === 'SESSION' &&
+      cleanPath.endsWith('/logout-all')
+    ) {
+      return 'SESSIONS_REVOKED';
+    }
+
+    if (
+      entityType === 'SESSION' &&
+      (
+        cleanPath.endsWith('/logout') ||
+        method === 'DELETE'
+      )
+    ) {
+      return 'SESSION_REVOKED';
+    }
 
     if (
       entityType === 'USER' &&

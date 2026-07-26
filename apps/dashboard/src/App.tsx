@@ -1,4 +1,5 @@
 import {
+  KeyRound,
   History,
   Users,
   Activity,
@@ -31,6 +32,7 @@ import AlertManagementPanel from './AlertManagementPanel';
 import SiteDetailsPanel from './SiteDetailsPanel';
 import UserManagementPanel from './UserManagementPanel';
 import AuditLogPanel from './AuditLogPanel';
+import SessionManagementPanel from './SessionManagementPanel';
 import { useAuthUser } from './AuthGate';
 import type {
   ActiveAlert,
@@ -308,6 +310,7 @@ function App() {
   const [userManagementOpen, setUserManagementOpen] =
     useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
+  const [sessionManagementOpen, setSessionManagementOpen] = useState(false);
   const [siteDetailsOpen, setSiteDetailsOpen] =
     useState(false);
   const [fleetSearch, setFleetSearch] = useState('');
@@ -508,6 +511,19 @@ function App() {
         </div>
 
         <div className="topbar__actions">
+          {authUser.role === 'ADMIN' && (
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() =>
+                setSessionManagementOpen(true)
+              }
+            >
+              <KeyRound size={17} />
+              Sessions
+            </button>
+          )}
+
           {authUser.role === 'ADMIN' && (
             <button
               className="refresh-button"
@@ -921,6 +937,14 @@ function App() {
           </>
         )}
       </main>
+
+      {sessionManagementOpen && (
+        <SessionManagementPanel
+          onClose={() =>
+            setSessionManagementOpen(false)
+          }
+        />
+      )}
 
       {auditLogOpen && (
         <AuditLogPanel
