@@ -134,6 +134,9 @@ export class UserService {
       },
     );
 
+    await this.userRepository
+      .revokeActiveSessions(id);
+
     return this.toPublicUser(updated);
   }
 
@@ -162,6 +165,9 @@ export class UserService {
 
     const removed =
       await this.userRepository.softDelete(id);
+
+    await this.userRepository
+      .revokeActiveSessions(id);
 
     return this.toPublicUser(removed);
   }

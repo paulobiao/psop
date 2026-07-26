@@ -31,6 +31,28 @@ export type ManagedUserStatus =
   | 'ACTIVE'
   | 'DISABLED';
 
+export type AuthSessionState =
+  | 'ACTIVE'
+  | 'REVOKED'
+  | 'EXPIRED';
+
+export interface AuthSession {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: ManagedUserRole;
+  userStatus: ManagedUserStatus;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  current: boolean;
+  state: AuthSessionState;
+}
+
 export interface ManagedUser {
   id: string;
   organizationId: string;
@@ -57,63 +79,143 @@ export interface UpdateUserInput {
   status?: ManagedUserStatus;
 }
 
-const ACCESS_TOKEN_KEY = 'psop.accessToken';
+let accessToken: string | null = null;
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return accessToken;
 }
 
-export function setAccessToken(token: string): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+export function setAccessToken(
+  token: string,
+): void {
+  accessToken = token;
 }
 
 export function clearAccessToken(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  accessToken = null;
 }
 
 const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL || '/api/v1'
 ).replace(/\/$/, '');
 
+let refreshPromise:
+  | Promise<LoginResponse>
+  | null = null;
+
+async function refreshAccessToken():
+Promise<LoginResponse> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(
+      `${apiBaseUrl}/auth/refresh`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(
+            'Session refresh failed',
+          );
+        }
+
+        const result =
+          (await response.json()) as LoginResponse;
+
+        setAccessToken(result.accessToken);
+
+        return result;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
+
 async function requestJson<T>(
   path: string,
   options: RequestInit = {},
   signal?: AbortSignal,
+  allowRefresh = true,
 ): Promise<T> {
   const accessToken = getAccessToken();
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...options,
-    signal,
-    headers: {
-      Accept: 'application/json',
-      ...(accessToken
-        ? { Authorization: `Bearer ${accessToken}` }
-        : {}),
-      ...(options.body
-        ? { 'Content-Type': 'application/json' }
-        : {}),
-      ...options.headers,
+  const response = await fetch(
+    `${apiBaseUrl}${path}`,
+    {
+      ...options,
+      signal,
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        ...(accessToken
+          ? {
+              Authorization:
+                `Bearer ${accessToken}`,
+            }
+          : {}),
+        ...(options.body
+          ? {
+              'Content-Type':
+                'application/json',
+            }
+          : {}),
+        ...options.headers,
+      },
     },
-  });
+  );
+
+  if (
+    response.status === 401 &&
+    allowRefresh &&
+    path !== '/auth/login' &&
+    path !== '/auth/refresh'
+  ) {
+    try {
+      await refreshAccessToken();
+
+      return requestJson<T>(
+        path,
+        options,
+        signal,
+        false,
+      );
+    } catch {
+      clearAccessToken();
+
+      window.dispatchEvent(
+        new Event('psop:unauthorized'),
+      );
+    }
+  }
 
   if (!response.ok) {
     if (
       response.status === 401 &&
-      path !== '/auth/login'
+      path !== '/auth/login' &&
+      path !== '/auth/refresh'
     ) {
       clearAccessToken();
+
       window.dispatchEvent(
         new Event('psop:unauthorized'),
       );
     }
 
-    let message = `PSOP API returned HTTP ${response.status}`;
+    let message =
+      `PSOP API returned HTTP ${response.status}`;
 
     try {
-      const payload = (await response.json()) as {
-        message?: string | string[];
-      };
+      const payload =
+        (await response.json()) as {
+          message?: string | string[];
+        };
 
       if (Array.isArray(payload.message)) {
         message = payload.message.join(', ');
@@ -121,7 +223,8 @@ async function requestJson<T>(
         message = payload.message;
       }
     } catch {
-      // Preserve the HTTP fallback message.
+      message =
+        `PSOP API returned HTTP ${response.status}`;
     }
 
     throw new Error(message);
@@ -378,5 +481,61 @@ export function getAuditLogs(
     `/audit-logs?limit=${limit}`,
     {},
     signal,
+  );
+}
+
+
+export function logoutCurrentSession(): Promise<{
+  success: boolean;
+}> {
+  return requestJson('/auth/logout', {
+    method: 'POST',
+  });
+}
+
+export function logoutAllCurrentSessions(): Promise<{
+  success: boolean;
+  revokedSessions: number;
+}> {
+  return requestJson('/auth/logout-all', {
+    method: 'POST',
+  });
+}
+
+export function getAuthSessions(
+  signal?: AbortSignal,
+): Promise<AuthSession[]> {
+  return requestJson<AuthSession[]>(
+    '/auth/sessions',
+    {},
+    signal,
+  );
+}
+
+export function revokeAuthSession(
+  sessionId: string,
+): Promise<{
+  success: boolean;
+  revokedSessions: number;
+}> {
+  return requestJson(
+    `/auth/sessions/${sessionId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+export function revokeUserAuthSessions(
+  userId: string,
+): Promise<{
+  success: boolean;
+  revokedSessions: number;
+}> {
+  return requestJson(
+    `/auth/users/${userId}/sessions`,
+    {
+      method: 'DELETE',
+    },
   );
 }

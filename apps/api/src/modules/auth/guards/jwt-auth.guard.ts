@@ -29,7 +29,10 @@ export class JwtAuthGuard implements CanActivate {
     const isPublic =
       this.reflector.getAllAndOverride<boolean>(
         IS_PUBLIC_KEY,
-        [context.getHandler(), context.getClass()],
+        [
+          context.getHandler(),
+          context.getClass(),
+        ],
       );
 
     if (isPublic) {
@@ -37,7 +40,8 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const request =
-      context.switchToHttp().getRequest<AuthenticatedRequest>();
+      context.switchToHttp()
+        .getRequest<AuthenticatedRequest>();
 
     const token = this.extractToken(
       request.headers.authorization,
@@ -51,18 +55,34 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload =
-        await this.jwtService.verifyAsync<JwtPayload>(
-          token,
-          {
-            secret:
-              this.configService.getOrThrow<string>(
-                'JWT_SECRET',
-              ),
-          },
+        await this.jwtService
+          .verifyAsync<JwtPayload>(
+            token,
+            {
+              secret:
+                this.configService
+                  .getOrThrow<string>(
+                    'JWT_SECRET',
+                  ),
+            },
+          );
+
+      if (
+        payload.type !== 'access' ||
+        !payload.sid
+      ) {
+        throw new Error(
+          'Invalid access token',
         );
+      }
 
       request.user =
-        await this.authService.validateUser(payload.sub);
+        await this.authService.validateSession(
+          payload.sub,
+          payload.sid,
+        );
+
+      request.sessionId = payload.sid;
 
       return true;
     } catch {
@@ -75,8 +95,11 @@ export class JwtAuthGuard implements CanActivate {
   private extractToken(
     authorization?: string,
   ): string | null {
-    const [type, token] = authorization?.split(' ') ?? [];
+    const [type, token] =
+      authorization?.split(' ') ?? [];
 
-    return type === 'Bearer' && token ? token : null;
+    return type === 'Bearer' && token
+      ? token
+      : null;
   }
 }

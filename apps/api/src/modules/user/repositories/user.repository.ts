@@ -91,4 +91,15 @@ export class UserRepository {
       },
     });
   }
+  revokeActiveSessions(userId: string) {
+    return this.prisma.userSession.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+  }
 }

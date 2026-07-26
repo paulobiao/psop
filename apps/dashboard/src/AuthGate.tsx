@@ -16,9 +16,9 @@ import {
 } from 'react';
 import {
   clearAccessToken,
-  getAccessToken,
   getCurrentUser,
   login,
+  logoutCurrentSession,
   setAccessToken,
   type AuthUser,
 } from './api';
@@ -45,23 +45,20 @@ export function useAuthUser(): AuthUser {
 export default function AuthGate({
   children,
 }: AuthGateProps) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [checking, setChecking] = useState(
-    Boolean(getAccessToken()),
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [email, setEmail] = useState('admin@psop.local');
+  const [user, setUser] =
+    useState<AuthUser | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [submitting, setSubmitting] =
+    useState(false);
+  const [loggingOut, setLoggingOut] =
+    useState(false);
+  const [email, setEmail] =
+    useState('admin@psop.local');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] =
+    useState<string | null>(null);
 
   useEffect(() => {
-    const token = getAccessToken();
-
-    if (!token) {
-      setChecking(false);
-      return;
-    }
-
     const controller = new AbortController();
 
     void getCurrentUser(controller.signal)
@@ -105,7 +102,10 @@ export default function AuthGate({
     setError(null);
 
     try {
-      const result = await login(email, password);
+      const result = await login(
+        email,
+        password,
+      );
 
       setAccessToken(result.accessToken);
       setUser(result.user);
@@ -121,17 +121,31 @@ export default function AuthGate({
     }
   }
 
-  function handleLogout() {
-    clearAccessToken();
-    setUser(null);
-    setPassword('');
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    try {
+      await logoutCurrentSession();
+    } catch {
+      clearAccessToken();
+    } finally {
+      clearAccessToken();
+      setUser(null);
+      setPassword('');
+      setLoggingOut(false);
+    }
   }
 
   if (checking) {
     return (
       <main className="auth-loading">
-        <LoaderCircle className="spin" size={30} />
-        <strong>Validating secure session…</strong>
+        <LoaderCircle
+          className="spin"
+          size={30}
+        />
+        <strong>
+          Validating secure session…
+        </strong>
       </main>
     );
   }
@@ -171,6 +185,7 @@ export default function AuthGate({
 
               <div className="auth-input">
                 <Mail size={17} />
+
                 <input
                   type="email"
                   value={email}
@@ -188,6 +203,7 @@ export default function AuthGate({
 
               <div className="auth-input">
                 <LockKeyhole size={17} />
+
                 <input
                   type="password"
                   value={password}
@@ -202,7 +218,9 @@ export default function AuthGate({
             </label>
 
             {error && (
-              <div className="auth-error">{error}</div>
+              <div className="auth-error">
+                {error}
+              </div>
             )}
 
             <button
@@ -235,21 +253,29 @@ export default function AuthGate({
         {children}
 
         <aside className="session-control">
-        <ShieldCheck size={17} />
+          <ShieldCheck size={17} />
 
-        <div>
-          <strong>{user.name}</strong>
-          <small>{user.role}</small>
-        </div>
+          <div>
+            <strong>{user.name}</strong>
+            <small>{user.role}</small>
+          </div>
 
-        <button
-          type="button"
-          onClick={handleLogout}
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <LogOut size={16} />
-        </button>
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            {loggingOut ? (
+              <LoaderCircle
+                className="spin"
+                size={16}
+              />
+            ) : (
+              <LogOut size={16} />
+            )}
+          </button>
         </aside>
       </>
     </AuthUserContext.Provider>
