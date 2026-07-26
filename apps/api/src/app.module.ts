@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditModule } from './modules/audit/audit.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './modules/health/health.module';
 import { SiteModule } from './modules/site/site.module';
@@ -16,6 +17,7 @@ import { UserModule } from './modules/user/user.module';
     PrismaModule,
     AuthModule,
     UserModule,
+    AuditModule,
     HealthModule,
     SiteModule,
     DeviceModule,
