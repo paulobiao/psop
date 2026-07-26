@@ -51,6 +51,7 @@ export class UserService {
       passwordHash: await hash(data.password, 12),
       role: data.role,
       status: 'ACTIVE',
+      mustChangePassword: true,
     });
 
     return this.toPublicUser(user);
@@ -131,6 +132,7 @@ export class UserService {
       id,
       {
         passwordHash: await hash(data.password, 12),
+        mustChangePassword: true,
       },
     );
 
@@ -242,6 +244,12 @@ export class UserService {
       email: user.email,
       role: user.role,
       status: user.status,
+      mustChangePassword:
+        user.mustChangePassword,
+      mfaEnabled:
+        user.mfaEnabled,
+      mfaEnabledAt:
+        user.mfaEnabledAt,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

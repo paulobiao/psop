@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  AuthChallenge,
   Prisma,
   User,
   UserSession,
@@ -8,9 +9,14 @@ import { PrismaService } from '../../../database/prisma.service.js';
 
 @Injectable()
 export class AuthRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma:
+      PrismaService,
+  ) {}
 
-  findActiveByEmail(email: string): Promise<User | null> {
+  findActiveByEmail(
+    email: string,
+  ): Promise<User | null> {
     return this.prisma.user.findFirst({
       where: {
         email,
@@ -24,7 +30,9 @@ export class AuthRepository {
     });
   }
 
-  findActiveById(id: string): Promise<User | null> {
+  findActiveById(
+    id: string,
+  ): Promise<User | null> {
     return this.prisma.user.findFirst({
       where: {
         id,
@@ -51,7 +59,9 @@ export class AuthRepository {
     });
   }
 
-  markLogin(id: string): Promise<User> {
+  markLogin(
+    id: string,
+  ): Promise<User> {
     return this.prisma.user.update({
       where: {
         id,
@@ -63,133 +73,303 @@ export class AuthRepository {
   }
 
   createSession(
-    data: Prisma.UserSessionUncheckedCreateInput,
+    data:
+      Prisma.UserSessionUncheckedCreateInput,
   ): Promise<UserSession> {
-    return this.prisma.userSession.create({
-      data,
-    });
+    return this.prisma.userSession
+      .create({
+        data,
+      });
   }
 
   findActiveSession(
     id: string,
     userId: string,
   ): Promise<UserSession | null> {
-    return this.prisma.userSession.findFirst({
-      where: {
-        id,
-        userId,
-        revokedAt: null,
-        expiresAt: {
-          gt: new Date(),
+    return this.prisma.userSession
+      .findFirst({
+        where: {
+          id,
+          userId,
+          revokedAt: null,
+          expiresAt: {
+            gt: new Date(),
+          },
         },
-      },
-    });
+      });
   }
 
   rotateSession(
     id: string,
     userId: string,
-    currentRefreshTokenHash: string,
-    nextRefreshTokenHash: string,
+    currentHash: string,
+    nextHash: string,
     expiresAt: Date,
     context: {
       ipAddress?: string;
       userAgent?: string;
     },
   ): Promise<Prisma.BatchPayload> {
-    return this.prisma.userSession.updateMany({
-      where: {
-        id,
-        userId,
-        refreshTokenHash:
-          currentRefreshTokenHash,
-        revokedAt: null,
-        expiresAt: {
-          gt: new Date(),
+    return this.prisma.userSession
+      .updateMany({
+        where: {
+          id,
+          userId,
+          refreshTokenHash:
+            currentHash,
+          revokedAt: null,
+          expiresAt: {
+            gt: new Date(),
+          },
         },
-      },
-      data: {
-        refreshTokenHash:
-          nextRefreshTokenHash,
-        expiresAt,
-        lastUsedAt: new Date(),
-        ...(context.ipAddress
-          ? { ipAddress: context.ipAddress }
-          : {}),
-        ...(context.userAgent
-          ? { userAgent: context.userAgent }
-          : {}),
-      },
-    });
+        data: {
+          refreshTokenHash:
+            nextHash,
+          expiresAt,
+          lastUsedAt: new Date(),
+          ...(context.ipAddress
+            ? {
+                ipAddress:
+                  context.ipAddress,
+              }
+            : {}),
+          ...(context.userAgent
+            ? {
+                userAgent:
+                  context.userAgent,
+              }
+            : {}),
+        },
+      });
   }
 
   revokeSessionForUser(
     id: string,
     userId: string,
   ): Promise<Prisma.BatchPayload> {
-    return this.prisma.userSession.updateMany({
-      where: {
-        id,
-        userId,
-        revokedAt: null,
-      },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
+    return this.prisma.userSession
+      .updateMany({
+        where: {
+          id,
+          userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
   }
 
   revokeSessionForOrganization(
     id: string,
     organizationId: string,
   ): Promise<Prisma.BatchPayload> {
-    return this.prisma.userSession.updateMany({
-      where: {
-        id,
-        organizationId,
-        revokedAt: null,
-      },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
+    return this.prisma.userSession
+      .updateMany({
+        where: {
+          id,
+          organizationId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
   }
 
   revokeAllSessionsForUser(
     userId: string,
     organizationId: string,
   ): Promise<Prisma.BatchPayload> {
-    return this.prisma.userSession.updateMany({
+    return this.prisma.userSession
+      .updateMany({
+        where: {
+          userId,
+          organizationId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+  }
+
+  revokeAllSessionsExcept(
+    userId: string,
+    organizationId: string,
+    sessionId: string,
+  ): Promise<Prisma.BatchPayload> {
+    return this.prisma.userSession
+      .updateMany({
+        where: {
+          userId,
+          organizationId,
+          id: {
+            not: sessionId,
+          },
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+  }
+
+  listSessions(
+    organizationId: string,
+  ) {
+    return this.prisma.userSession
+      .findMany({
+        where: {
+          organizationId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+              role: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 200,
+      });
+  }
+
+  updatePasswordRequirement(
+    userId: string,
+    passwordHash: string,
+    mustChangePassword: boolean,
+  ): Promise<User> {
+    return this.prisma.user.update({
       where: {
-        userId,
-        organizationId,
-        revokedAt: null,
+        id: userId,
       },
       data: {
-        revokedAt: new Date(),
+        passwordHash,
+        mustChangePassword,
       },
     });
   }
 
-  listSessions(organizationId: string) {
-    return this.prisma.userSession.findMany({
+  saveMfaSecret(
+    userId: string,
+    encryptedSecret: string,
+  ): Promise<User> {
+    return this.prisma.user.update({
       where: {
-        organizationId,
+        id: userId,
       },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            role: true,
-            status: true,
+      data: {
+        mfaSecretEncrypted:
+          encryptedSecret,
+        mfaEnabled: false,
+        mfaRecoveryCodeHashes: [],
+        mfaEnabledAt: null,
+      },
+    });
+  }
+
+  enableMfa(
+    userId: string,
+    recoveryCodeHashes: string[],
+  ): Promise<User> {
+    return this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        mfaEnabled: true,
+        mfaEnabledAt: new Date(),
+        mfaRecoveryCodeHashes:
+          recoveryCodeHashes,
+      },
+    });
+  }
+
+  disableMfa(
+    userId: string,
+  ): Promise<User> {
+    return this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        mfaEnabled: false,
+        mfaSecretEncrypted: null,
+        mfaRecoveryCodeHashes: [],
+        mfaEnabledAt: null,
+      },
+    });
+  }
+
+  replaceRecoveryCodes(
+    userId: string,
+    hashes: string[],
+  ): Promise<User> {
+    return this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        mfaRecoveryCodeHashes:
+          hashes,
+      },
+    });
+  }
+
+  createChallenge(
+    data:
+      Prisma.AuthChallengeUncheckedCreateInput,
+  ): Promise<AuthChallenge> {
+    return this.prisma.authChallenge
+      .create({
+        data,
+      });
+  }
+
+  findActiveChallenge(
+    id: string,
+    userId: string,
+    type: string,
+  ): Promise<AuthChallenge | null> {
+    return this.prisma.authChallenge
+      .findFirst({
+        where: {
+          id,
+          userId,
+          type,
+          usedAt: null,
+          expiresAt: {
+            gt: new Date(),
           },
         },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 200,
-    });
+      });
+  }
+
+  consumeChallenge(
+    id: string,
+    userId: string,
+    type: string,
+  ): Promise<Prisma.BatchPayload> {
+    return this.prisma.authChallenge
+      .updateMany({
+        where: {
+          id,
+          userId,
+          type,
+          usedAt: null,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        data: {
+          usedAt: new Date(),
+        },
+      });
   }
 }

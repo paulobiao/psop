@@ -15,11 +15,41 @@ export interface AuthUser {
   name: string;
   email: string;
   role: 'ADMIN' | 'OPERATOR' | 'VIEWER';
+  mustChangePassword: boolean;
+  mfaEnabled: boolean;
 }
 
-export interface LoginResponse {
+export interface AuthenticatedLoginResponse {
+  stage: 'AUTHENTICATED';
   accessToken: string;
   user: AuthUser;
+}
+
+export interface PendingLoginResponse {
+  stage:
+    | 'PASSWORD_CHANGE_REQUIRED'
+    | 'MFA_REQUIRED';
+  challengeToken: string;
+  user: {
+    name: string;
+    email: string;
+  };
+}
+
+export type LoginResponse =
+  | AuthenticatedLoginResponse
+  | PendingLoginResponse;
+
+export interface MfaStatus {
+  enabled: boolean;
+  enabledAt: string | null;
+  recoveryCodeCount: number;
+  mustChangePassword: boolean;
+}
+
+export interface MfaSetup {
+  secret: string;
+  otpAuthUri: string;
 }
 
 export type ManagedUserRole =
@@ -60,6 +90,9 @@ export interface ManagedUser {
   email: string;
   role: ManagedUserRole;
   status: ManagedUserStatus;
+  mustChangePassword: boolean;
+  mfaEnabled: boolean;
+  mfaEnabledAt: string | null;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -99,12 +132,24 @@ const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL || '/api/v1'
 ).replace(/\/$/, '');
 
+
+function isPublicAuthenticationPath(
+  path: string,
+): boolean {
+  return [
+    '/auth/login',
+    '/auth/refresh',
+    '/auth/password/change',
+    '/auth/mfa/verify',
+  ].includes(path);
+}
+
 let refreshPromise:
-  | Promise<LoginResponse>
+  | Promise<AuthenticatedLoginResponse>
   | null = null;
 
 async function refreshAccessToken():
-Promise<LoginResponse> {
+Promise<AuthenticatedLoginResponse> {
   if (!refreshPromise) {
     refreshPromise = fetch(
       `${apiBaseUrl}/auth/refresh`,
@@ -124,7 +169,7 @@ Promise<LoginResponse> {
         }
 
         const result =
-          (await response.json()) as LoginResponse;
+          (await response.json()) as AuthenticatedLoginResponse;
 
         setAccessToken(result.accessToken);
 
@@ -174,8 +219,7 @@ async function requestJson<T>(
   if (
     response.status === 401 &&
     allowRefresh &&
-    path !== '/auth/login' &&
-    path !== '/auth/refresh'
+    !isPublicAuthenticationPath(path)
   ) {
     try {
       await refreshAccessToken();
@@ -377,13 +421,18 @@ export function login(
   email: string,
   password: string,
 ): Promise<LoginResponse> {
-  return requestJson<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({
-      email,
-      password,
-    }),
-  });
+  return requestJson<LoginResponse>(
+    '/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    },
+    undefined,
+    false,
+  );
 }
 
 export function getCurrentUser(
@@ -536,6 +585,116 @@ export function revokeUserAuthSessions(
     `/auth/users/${userId}/sessions`,
     {
       method: 'DELETE',
+    },
+  );
+}
+
+
+export function completeFirstPasswordChange(
+  challengeToken: string,
+  newPassword: string,
+): Promise<LoginResponse> {
+  return requestJson<LoginResponse>(
+    '/auth/password/change',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        challengeToken,
+        newPassword,
+      }),
+    },
+    undefined,
+    false,
+  );
+}
+
+export function verifyMfaLogin(
+  challengeToken: string,
+  code: string,
+): Promise<LoginResponse> {
+  return requestJson<LoginResponse>(
+    '/auth/mfa/verify',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        challengeToken,
+        code,
+      }),
+    },
+    undefined,
+    false,
+  );
+}
+
+export function getMfaStatus(
+  signal?: AbortSignal,
+): Promise<MfaStatus> {
+  return requestJson<MfaStatus>(
+    '/auth/mfa/status',
+    {},
+    signal,
+  );
+}
+
+export function beginMfaSetup():
+Promise<MfaSetup> {
+  return requestJson<MfaSetup>(
+    '/auth/mfa/setup',
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export function enableMfa(
+  code: string,
+): Promise<{
+  enabled: boolean;
+  recoveryCodes: string[];
+}> {
+  return requestJson(
+    '/auth/mfa/enable',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+      }),
+    },
+  );
+}
+
+export function disableMfa(
+  password: string,
+  code: string,
+): Promise<{
+  enabled: boolean;
+}> {
+  return requestJson(
+    '/auth/mfa/disable',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        password,
+        code,
+      }),
+    },
+  );
+}
+
+export function regenerateMfaRecoveryCodes(
+  password: string,
+  code: string,
+): Promise<{
+  recoveryCodes: string[];
+}> {
+  return requestJson(
+    '/auth/mfa/recovery-codes',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        password,
+        code,
+      }),
     },
   );
 }
