@@ -3221,3 +3221,300 @@ tbody tr:hover {
     margin-right: 0;
   }
 }
+
+
+.audit-log-modal {
+  width: min(1320px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #0d1727;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+}
+
+.audit-log-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 23px 25px;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-log-title {
+  display: flex;
+  gap: 13px;
+}
+
+.audit-log-title > span {
+  display: grid;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.audit-log-title h2,
+.audit-details-heading h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+}
+
+.audit-log-title h2 {
+  font-size: 24px;
+}
+
+.audit-log-title p,
+.audit-details-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.audit-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-log-toolbar > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.audit-search {
+  display: flex;
+  width: min(430px, 100%);
+  align-items: center;
+  gap: 9px;
+  min-height: 41px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(4, 10, 20, 0.5);
+}
+
+.audit-search:focus-within {
+  border-color: rgba(77, 163, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.09);
+}
+
+.audit-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text-strong);
+  font: inherit;
+  background: transparent;
+}
+
+.audit-log-layout {
+  display: grid;
+  grid-template-columns: 430px minmax(0, 1fr);
+  min-height: 610px;
+  max-height: calc(100vh - 220px);
+}
+
+.audit-log-list {
+  overflow: auto;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+}
+
+.audit-log-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 13px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  text-align: left;
+  background: transparent;
+}
+
+.audit-log-card:hover,
+.audit-log-card--active {
+  border-color: rgba(77, 163, 255, 0.3);
+  background: var(--accent-soft);
+}
+
+.audit-log-icon {
+  display: grid;
+  width: 37px;
+  height: 37px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--accent);
+  background: rgba(77, 163, 255, 0.12);
+}
+
+.audit-log-card strong,
+.audit-log-card small,
+.audit-log-card em {
+  display: block;
+}
+
+.audit-log-card strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.audit-log-card small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.audit-log-card em {
+  overflow: hidden;
+  margin-top: 7px;
+  color: #718198;
+  font-size: 9px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-log-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 300px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.audit-log-details {
+  overflow: auto;
+  padding: 22px;
+}
+
+.audit-details-heading {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-details-heading h3 {
+  margin-top: 4px;
+  font-size: 21px;
+}
+
+.audit-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  padding: 18px 0;
+}
+
+.audit-details-grid article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.audit-details-grid article > svg {
+  grid-row: 1 / 4;
+  color: var(--accent);
+}
+
+.audit-details-grid span,
+.audit-details-grid strong,
+.audit-details-grid small {
+  display: block;
+}
+
+.audit-details-grid span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.audit-details-grid strong {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-details-grid small {
+  overflow: hidden;
+  margin-top: 4px;
+  color: #718198;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-metadata {
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: rgba(4, 10, 20, 0.45);
+}
+
+.audit-metadata pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 12px 0 0;
+  color: #aebdd0;
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .audit-log-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .audit-log-list {
+    max-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 620px) {
+  .audit-log-modal {
+    min-height: 100vh;
+    max-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .audit-log-header {
+    padding: 18px 15px;
+  }
+
+  .audit-log-title > span {
+    display: none;
+  }
+
+  .audit-log-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .audit-details-grid {
+    grid-template-columns: 1fr;
+  }
+}

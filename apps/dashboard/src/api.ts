@@ -345,3 +345,38 @@ export function deleteUser(
     },
   );
 }
+
+
+export interface AuditLog {
+  id: string;
+  organizationId: string;
+  actorUserId: string | null;
+  actorName: string;
+  actorEmail: string;
+  actorRole: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  method: string;
+  path: string;
+  statusCode: number;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: {
+    durationMs?: number;
+    request?: unknown;
+    response?: unknown;
+  } | null;
+  createdAt: string;
+}
+
+export function getAuditLogs(
+  limit = 100,
+  signal?: AbortSignal,
+): Promise<AuditLog[]> {
+  return requestJson<AuditLog[]>(
+    `/audit-logs?limit=${limit}`,
+    {},
+    signal,
+  );
+}
