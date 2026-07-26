@@ -50,36 +50,43 @@ enum DeviceStatus {
 }
 
 model Organization {
-  id        String             @id @default(uuid()) @db.Uuid
-  name      String
-  slug      String             @unique
-  status    OrganizationStatus @default(ACTIVE)
-  sites     Site[]
-  users     User[]
-  auditLogs AuditLog[]
-  createdAt DateTime           @default(now()) @map("created_at")
-  updatedAt DateTime           @updatedAt @map("updated_at")
-  deletedAt DateTime?          @map("deleted_at")
-  sessions  UserSession[]
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String             @unique
+  status         OrganizationStatus @default(ACTIVE)
+  sites          Site[]
+  users          User[]
+  auditLogs      AuditLog[]
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  deletedAt      DateTime?          @map("deleted_at")
+  sessions       UserSession[]
+  authChallenges AuthChallenge[]
 
   @@map("organizations")
 }
 
 model User {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String
-  email          String        @unique
-  passwordHash   String        @map("password_hash")
-  role           UserRole      @default(OPERATOR)
-  status         UserStatus    @default(ACTIVE)
-  lastLoginAt    DateTime?     @map("last_login_at")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
-  deletedAt      DateTime?     @map("deleted_at")
-  auditLogs      AuditLog[]    @relation("AuditLogActor")
-  sessions       UserSession[]
+  id                    String          @id @default(uuid()) @db.Uuid
+  organizationId        String          @map("organization_id") @db.Uuid
+  organization          Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name                  String
+  email                 String          @unique
+  passwordHash          String          @map("password_hash")
+  mustChangePassword    Boolean         @default(false) @map("must_change_password")
+  mfaEnabled            Boolean         @default(false) @map("mfa_enabled")
+  mfaSecretEncrypted    String?         @map("mfa_secret_encrypted")
+  mfaRecoveryCodeHashes Json?           @map("mfa_recovery_code_hashes")
+  mfaEnabledAt          DateTime?       @map("mfa_enabled_at")
+  role                  UserRole        @default(OPERATOR)
+  status                UserStatus      @default(ACTIVE)
+  lastLoginAt           DateTime?       @map("last_login_at")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  deletedAt             DateTime?       @map("deleted_at")
+  auditLogs             AuditLog[]      @relation("AuditLogActor")
+  sessions              UserSession[]
+  authChallenges        AuthChallenge[]
 
   @@index([organizationId])
   @@index([status])
@@ -210,4 +217,22 @@ model UserSession {
   @@index([userId, revokedAt])
   @@index([expiresAt])
   @@map("user_sessions")
+}
+
+model AuthChallenge {
+  id             String       @id @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String       @map("user_id") @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String
+  ipAddress      String?      @map("ip_address")
+  userAgent      String?      @map("user_agent")
+  expiresAt      DateTime     @map("expires_at")
+  usedAt         DateTime?    @map("used_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([userId, type, usedAt, expiresAt])
+  @@index([organizationId, createdAt])
+  @@map("auth_challenges")
 }

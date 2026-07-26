@@ -113,6 +113,12 @@ export class AuditInterceptor
     const cleanPath = path.split('?')[0];
 
     if (
+      cleanPath.includes('/auth/mfa')
+    ) {
+      return 'MFA';
+    }
+
+    if (
       cleanPath.includes('/auth/sessions') ||
       cleanPath.includes('/auth/users/') &&
         cleanPath.endsWith('/sessions') ||
@@ -154,6 +160,34 @@ export class AuditInterceptor
     entityType: string,
   ): string {
     const cleanPath = path.split('?')[0];
+
+    if (
+      entityType === 'MFA' &&
+      cleanPath.endsWith('/setup')
+    ) {
+      return 'MFA_SETUP_STARTED';
+    }
+
+    if (
+      entityType === 'MFA' &&
+      cleanPath.endsWith('/enable')
+    ) {
+      return 'MFA_ENABLED';
+    }
+
+    if (
+      entityType === 'MFA' &&
+      cleanPath.endsWith('/disable')
+    ) {
+      return 'MFA_DISABLED';
+    }
+
+    if (
+      entityType === 'MFA' &&
+      cleanPath.endsWith('/recovery-codes')
+    ) {
+      return 'MFA_RECOVERY_CODES_REGENERATED';
+    }
 
     if (
       entityType === 'SESSION' &&
@@ -243,7 +277,7 @@ export class AuditInterceptor
         value as Record<string, unknown>,
       ).map(([key, item]) => {
         const sensitive =
-          /password|token|secret|authorization/i.test(
+          /password|token|secret|authorization|otp|code|recovery/i.test(
             key,
           );
 

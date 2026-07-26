@@ -6,13 +6,19 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RolesGuard } from './guards/roles.guard.js';
 import { AuthRepository } from './repositories/auth.repository.js';
 import { AuthService } from './services/auth.service.js';
+import { TotpService } from './services/totp.service.js';
 
 @Module({
-  imports: [JwtModule.register({})],
-  controllers: [AuthController],
+  imports: [
+    JwtModule.register({}),
+  ],
+  controllers: [
+    AuthController,
+  ],
   providers: [
     AuthRepository,
     AuthService,
+    TotpService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -22,6 +28,8 @@ import { AuthService } from './services/auth.service.js';
       useClass: RolesGuard,
     },
   ],
-  exports: [AuthService],
+  exports: [
+    AuthService,
+  ],
 })
 export class AuthModule {}

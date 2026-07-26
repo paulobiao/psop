@@ -20,11 +20,16 @@ import type {
 } from 'express';
 import type {
   AuthenticatedRequest,
+  AuthFlowResult,
   SessionContext,
 } from '../auth.types.js';
 import { Public } from '../decorators/public.decorator.js';
 import { Roles } from '../decorators/roles.decorator.js';
+import { CompletePasswordChangeDto } from '../dto/complete-password-change.dto.js';
 import { LoginDto } from '../dto/login.dto.js';
+import { MfaCodeDto } from '../dto/mfa-code.dto.js';
+import { MfaSecurityActionDto } from '../dto/mfa-security-action.dto.js';
+import { VerifyMfaDto } from '../dto/verify-mfa.dto.js';
 import { AuthService } from '../services/auth.service.js';
 
 @Controller({
@@ -36,8 +41,10 @@ export class AuthController {
     'psop.refreshToken';
 
   constructor(
-    private readonly authService: AuthService,
-    private readonly configService: ConfigService,
+    private readonly authService:
+      AuthService,
+    private readonly configService:
+      ConfigService,
   ) {}
 
   @Public()
@@ -49,20 +56,54 @@ export class AuthController {
     @Res({ passthrough: true })
     response: Response,
   ) {
-    const result = await this.authService.login(
-      data,
-      this.sessionContext(request),
-    );
-
-    this.setRefreshCookie(
+    return this.present(
+      await this.authService.login(
+        data,
+        this.context(request),
+      ),
       response,
-      result.refreshToken,
     );
+  }
 
-    return {
-      accessToken: result.accessToken,
-      user: result.user,
-    };
+  @Public()
+  @Post('password/change')
+  @HttpCode(HttpStatus.OK)
+  async changeFirstPassword(
+    @Body()
+    data: CompletePasswordChangeDto,
+    @Req() request: Request,
+    @Res({ passthrough: true })
+    response: Response,
+  ) {
+    return this.present(
+      await this.authService
+        .completePasswordChange(
+          data.challengeToken,
+          data.newPassword,
+          this.context(request),
+        ),
+      response,
+    );
+  }
+
+  @Public()
+  @Post('mfa/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyMfa(
+    @Body() data: VerifyMfaDto,
+    @Req() request: Request,
+    @Res({ passthrough: true })
+    response: Response,
+  ) {
+    return this.present(
+      await this.authService
+        .verifyMfaChallenge(
+          data.challengeToken,
+          data.code,
+          this.context(request),
+        ),
+      response,
+    );
   }
 
   @Public()
@@ -73,10 +114,11 @@ export class AuthController {
     @Res({ passthrough: true })
     response: Response,
   ) {
-    const refreshToken = this.readCookie(
-      request,
-      this.refreshCookieName,
-    );
+    const refreshToken =
+      this.readCookie(
+        request,
+        this.refreshCookieName,
+      );
 
     if (!refreshToken) {
       throw new UnauthorizedException(
@@ -84,40 +126,114 @@ export class AuthController {
       );
     }
 
-    const result = await this.authService.refresh(
-      refreshToken,
-      this.sessionContext(request),
-    );
-
-    this.setRefreshCookie(
+    return this.present(
+      await this.authService.refresh(
+        refreshToken,
+        this.context(request),
+      ),
       response,
-      result.refreshToken,
     );
-
-    return {
-      accessToken: result.accessToken,
-      user: result.user,
-    };
   }
 
   @Get('me')
-  me(@Req() request: AuthenticatedRequest) {
+  me(
+    @Req()
+    request: AuthenticatedRequest,
+  ) {
     return request.user;
+  }
+
+  @Get('mfa/status')
+  mfaStatus(
+    @Req()
+    request: AuthenticatedRequest,
+  ) {
+    return this.authService
+      .getMfaStatus(
+        request.user.id,
+      );
+  }
+
+  @Post('mfa/setup')
+  setupMfa(
+    @Req()
+    request: AuthenticatedRequest,
+  ) {
+    return this.authService
+      .beginMfaSetup(
+        request.user.id,
+      );
+  }
+
+  @Post('mfa/enable')
+  @HttpCode(HttpStatus.OK)
+  enableMfa(
+    @Req()
+    request: AuthenticatedRequest,
+    @Body() data: MfaCodeDto,
+  ) {
+    return this.authService
+      .enableMfa(
+        request.user.id,
+        request.user.organizationId,
+        request.sessionId,
+        data.code,
+      );
+  }
+
+  @Post('mfa/disable')
+  @HttpCode(HttpStatus.OK)
+  disableMfa(
+    @Req()
+    request: AuthenticatedRequest,
+    @Body()
+    data: MfaSecurityActionDto,
+  ) {
+    return this.authService
+      .disableMfa(
+        request.user.id,
+        request.user.organizationId,
+        request.sessionId,
+        data.password,
+        data.code,
+      );
+  }
+
+  @Post('mfa/recovery-codes')
+  @HttpCode(HttpStatus.OK)
+  recoveryCodes(
+    @Req()
+    request: AuthenticatedRequest,
+    @Body()
+    data: MfaSecurityActionDto,
+  ) {
+    return this.authService
+      .regenerateRecoveryCodes(
+        request.user.id,
+        request.user.organizationId,
+        request.sessionId,
+        data.password,
+        data.code,
+      );
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(
-    @Req() request: AuthenticatedRequest,
+    @Req()
+    request: AuthenticatedRequest,
     @Res({ passthrough: true })
     response: Response,
   ) {
-    const result = await this.authService.logout(
-      request.user.id,
-      request.sessionId,
-    );
+    const result =
+      await this.authService.logout(
+        request.user.id,
+        request.sessionId,
+      );
 
-    this.clearRefreshCookie(response);
+    this.clearRefreshCookie(
+      response,
+    );
 
     return result;
   }
@@ -125,37 +241,45 @@ export class AuthController {
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
   async logoutAll(
-    @Req() request: AuthenticatedRequest,
+    @Req()
+    request: AuthenticatedRequest,
     @Res({ passthrough: true })
     response: Response,
   ) {
     const result =
-      await this.authService.logoutAll(
-        request.user.id,
-        request.user.organizationId,
-      );
+      await this.authService
+        .logoutAll(
+          request.user.id,
+          request.user.organizationId,
+        );
 
-    this.clearRefreshCookie(response);
+    this.clearRefreshCookie(
+      response,
+    );
 
     return result;
   }
 
   @Roles('ADMIN')
   @Get('sessions')
-  listSessions(
-    @Req() request: AuthenticatedRequest,
+  sessions(
+    @Req()
+    request: AuthenticatedRequest,
   ) {
-    return this.authService.listSessions(
-      request.user.organizationId,
-      request.sessionId,
-    );
+    return this.authService
+      .listSessions(
+        request.user.organizationId,
+        request.sessionId,
+      );
   }
 
   @Roles('ADMIN')
   @Delete('sessions/:id')
   revokeSession(
-    @Req() request: AuthenticatedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req()
+    request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe)
+    id: string,
   ) {
     return this.authService
       .revokeOrganizationSession(
@@ -167,8 +291,12 @@ export class AuthController {
   @Roles('ADMIN')
   @Delete('users/:userId/sessions')
   revokeUserSessions(
-    @Req() request: AuthenticatedRequest,
-    @Param('userId', ParseUUIDPipe)
+    @Req()
+    request: AuthenticatedRequest,
+    @Param(
+      'userId',
+      ParseUUIDPipe,
+    )
     userId: string,
   ) {
     return this.authService
@@ -178,64 +306,101 @@ export class AuthController {
       );
   }
 
-  private sessionContext(
+  private present(
+    result: AuthFlowResult,
+    response: Response,
+  ) {
+    if (
+      result.stage !==
+      'AUTHENTICATED'
+    ) {
+      return result;
+    }
+
+    this.setRefreshCookie(
+      response,
+      result.refreshToken,
+    );
+
+    return {
+      stage: result.stage,
+      accessToken:
+        result.accessToken,
+      user: result.user,
+    };
+  }
+
+  private context(
     request: Request,
   ): SessionContext {
     const forwarded =
-      request.headers['x-forwarded-for'];
+      request.headers[
+        'x-forwarded-for'
+      ];
 
-    const forwardedIp = Array.isArray(forwarded)
-      ? forwarded[0]
-      : forwarded?.split(',')[0]?.trim();
+    const forwardedIp =
+      Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded
+            ?.split(',')[0]
+            ?.trim();
 
     return {
-      ipAddress: forwardedIp || request.ip,
+      ipAddress:
+        forwardedIp || request.ip,
       userAgent:
-        request.headers['user-agent'],
+        request.headers[
+          'user-agent'
+        ],
     };
   }
 
   private setRefreshCookie(
     response: Response,
-    refreshToken: string,
-  ): void {
+    token: string,
+  ) {
     response.cookie(
       this.refreshCookieName,
-      refreshToken,
+      token,
       {
         ...this.cookieOptions(),
         maxAge:
-          this.refreshExpiresSeconds() * 1000,
+          this.refreshExpiresSeconds() *
+          1000,
       },
     );
   }
 
   private clearRefreshCookie(
     response: Response,
-  ): void {
+  ) {
     response.clearCookie(
       this.refreshCookieName,
       this.cookieOptions(),
     );
   }
 
-  private cookieOptions(): CookieOptions {
+  private cookieOptions():
+  CookieOptions {
     return {
       httpOnly: true,
       sameSite: 'strict',
       secure:
-        this.configService.get<string>(
-          'NODE_ENV',
-        ) === 'production',
+        this.configService
+          .get<string>(
+            'NODE_ENV',
+          ) === 'production',
       path: '/api/v1/auth',
     };
   }
 
-  private refreshExpiresSeconds(): number {
+  private refreshExpiresSeconds():
+  number {
     return Number(
-      this.configService.get<string>(
-        'JWT_REFRESH_EXPIRES_SECONDS',
-      ) ?? 2592000,
+      this.configService
+        .get<string>(
+          'JWT_REFRESH_EXPIRES_SECONDS',
+        ) ?? 2592000,
     );
   }
 
@@ -243,30 +408,35 @@ export class AuthController {
     request: Request,
     name: string,
   ): string | null {
-    const cookieHeader =
+    const header =
       request.headers.cookie;
 
-    if (!cookieHeader) {
+    if (!header) {
       return null;
     }
 
-    for (const part of cookieHeader.split(';')) {
-      const separator = part.indexOf('=');
+    for (
+      const part of header.split(';')
+    ) {
+      const index =
+        part.indexOf('=');
 
-      if (separator < 0) {
+      if (index < 0) {
         continue;
       }
 
-      const key = part
-        .slice(0, separator)
-        .trim();
-
-      if (key !== name) {
+      if (
+        part
+          .slice(0, index)
+          .trim() !== name
+      ) {
         continue;
       }
 
       return decodeURIComponent(
-        part.slice(separator + 1).trim(),
+        part
+          .slice(index + 1)
+          .trim(),
       );
     }
 
