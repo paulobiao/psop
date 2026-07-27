@@ -114,3 +114,24 @@ A future phase should convert these scenarios into repeatable test suites execut
 ## Conclusion
 
 All security scenarios included in the July 26, 2026 validation passed. The feature was merged into `main` through PR #28 after successful backend build, frontend build and functional integration testing.
+
+
+## Post-validation automation update
+
+Following the original PR #28 validation, permanent Jest unit tests were added for the cryptographic MFA service.
+
+The automated suite covers:
+
+- Base32 TOTP secret generation;
+- RFC 6238 compatible TOTP verification;
+- previous, current and following time-window validation;
+- rejection of codes outside the permitted window;
+- AES-256-GCM encryption and decryption;
+- rejection of altered authentication tags and ciphertext;
+- encryption-key length validation;
+- recovery-code format and uniqueness;
+- keyed recovery-code hashing;
+- normalized recovery-code comparison;
+- rejection of incorrect recovery codes.
+
+These tests are executed automatically by PSOP CI on pull requests and pushes to `main`.

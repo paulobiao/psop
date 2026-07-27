@@ -32,7 +32,9 @@ The workflow performs:
 
 ## Current scope
 
-This workflow validates source integrity, generated Prisma code, unit tests and production compilation.
+This workflow validates source integrity, generated Prisma code, permanent security unit tests and production compilation.
+
+The permanent test suite currently includes TOTP generation and verification, time-window tolerance, encryption integrity, tamper detection and recovery-code protection.
 
 It does not deploy PSOP and does not execute destructive infrastructure actions.
 
