@@ -29,7 +29,7 @@ The endeavor is broader than a camera dashboard. It is intended to support devic
 | Camera telemetry can be simulated | Python camera simulator | Available | Produce repeatable simulation dataset |
 | Cloud telemetry integration exists | AWS IoT Core and DynamoDB infrastructure | Partially available | Create non-destructive deployment evidence |
 | The platform can support heterogeneous devices | Normalized device and telemetry domain model | Design supported | Demonstrate a second device type |
-| The project follows secure engineering practices | Pull requests, security controls, audit redaction and CI | In progress | Add dependency and static security scanning |
+| The project follows secure engineering practices | Pull requests, security controls, audit redaction, permanent unit tests and PostgreSQL-backed integration tests | Available | Add dependency and static security scanning |
 | The project has measurable development progress | Commits, PRs, migrations and build outputs | Available | Maintain milestone and release log |
 | The developer is positioned to advance the work | Source-code authorship and project history | Available | Link résumé experience to individual modules |
 | The endeavor can create broader operational value | Reusable observability architecture | Requires supporting record | Develop pilot or laboratory case studies |
@@ -110,3 +110,10 @@ Preferred artifacts include:
 - release notes.
 
 Avoid relying only on narrative descriptions when source code, test output or system-generated records can prove the same fact more objectively.
+
+
+## Automated integration evidence
+
+The permanent security integration suite uses an isolated PostgreSQL database and validates first access, session rotation, refresh-token replay protection, role enforcement, tenant isolation, TOTP MFA, recovery-code consumption and audit redaction.
+
+The same suite executes locally and in GitHub Actions, creating reproducible evidence rather than relying exclusively on manual terminal validation.

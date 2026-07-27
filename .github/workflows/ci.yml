@@ -19,11 +19,33 @@ jobs:
   validate:
     name: Validate API and dashboard
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: psop
+          POSTGRES_PASSWORD: psop_test
+          POSTGRES_DB: psop_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U psop -d psop_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://psop:psop@127.0.0.1:5432/psop_ci
+      NODE_ENV: test
+      DATABASE_URL: postgresql://psop:psop_test@127.0.0.1:5432/psop_test?schema=public
+      JWT_SECRET: ci-access-secret-that-is-long-enough
+      JWT_REFRESH_SECRET: ci-refresh-secret-that-is-long-enough
+      JWT_EXPIRES_SECONDS: 900
+      JWT_REFRESH_EXPIRES_SECONDS: 3600
       MFA_ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      CONNECTIVITY_MONITOR_ENABLED: false
+      AWS_REGION: us-east-1
 
     steps:
       - name: Checkout repository
@@ -47,8 +69,14 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm run check:prisma
 
-      - name: Run API tests
+      - name: Apply database migrations
+        run: pnpm --filter api exec prisma migrate deploy
+
+      - name: Run API unit tests
         run: pnpm test
+
+      - name: Run API security integration tests
+        run: pnpm --filter api test:e2e
 
       - name: Build API
         run: pnpm --filter api build

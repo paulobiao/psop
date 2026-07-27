@@ -11,7 +11,9 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "check:prisma": "pnpm --filter api exec prisma validate && pnpm --filter api exec prisma generate",
-    "check": "pnpm run check:prisma && pnpm test && pnpm --filter api build && pnpm --filter dashboard typecheck && pnpm --filter dashboard build"
+    "check": "pnpm run check:prisma && pnpm test && pnpm --filter api build && pnpm --filter dashboard typecheck && pnpm --filter dashboard build",
+    "test:integration": "bash scripts/test-security-integration.sh",
+    "check:full": "pnpm run check && pnpm run test:integration"
   },
   "keywords": [],
   "author": "",
