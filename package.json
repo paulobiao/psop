@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "pnpm --filter api exec jest --runInBand --passWithNoTests",
+    "test": "pnpm --filter api exec jest --runInBand",
     "dev": "turbo dev",
     "build": "turbo build",
     "check:prisma": "pnpm --filter api exec prisma validate && pnpm --filter api exec prisma generate",
