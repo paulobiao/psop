@@ -7,9 +7,11 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "pnpm --filter api exec jest --runInBand --passWithNoTests",
     "dev": "turbo dev",
-    "build": "turbo build"
+    "build": "turbo build",
+    "check:prisma": "pnpm --filter api exec prisma validate && pnpm --filter api exec prisma generate",
+    "check": "pnpm run check:prisma && pnpm test && pnpm --filter api build && pnpm --filter dashboard typecheck && pnpm --filter dashboard build"
   },
   "keywords": [],
   "author": "",
