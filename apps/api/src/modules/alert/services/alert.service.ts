@@ -89,7 +89,9 @@ export class AlertService {
     const title =
       input.state === 'OFFLINE'
         ? `Camera ${input.externalId} is offline`
-        : `Camera ${input.externalId} is not reporting normally`;
+        : input.state === 'DEGRADED'
+          ? `Camera ${input.externalId} is degraded`
+          : `Camera ${input.externalId} is not reporting normally`;
 
     const message =
       `${input.deviceName} at site ${input.siteCode} ` +

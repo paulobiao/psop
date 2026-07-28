@@ -287,6 +287,20 @@ export function getOperationsOverview(
   );
 }
 
+export function evaluateFleetConnectivity():
+Promise<{
+  evaluatedAt: string;
+  evaluatedDevices: number;
+  createdEvents: number;
+}> {
+  return requestJson(
+    '/devices/telemetry/evaluate',
+    {
+      method: 'POST',
+    },
+  );
+}
+
 export function getDeviceTelemetry(
   deviceId: string,
   signal?: AbortSignal,

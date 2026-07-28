@@ -37,6 +37,7 @@ export class OperationsOverviewService {
         sites: siteIds.size,
         cameras: fleet.summary.total,
         online: fleet.summary.online,
+        degraded: fleet.summary.degraded,
         offline: fleet.summary.offline,
         neverSeen: fleet.summary.neverSeen,
         unknown: fleet.summary.unknown,

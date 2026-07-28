@@ -1,5 +1,6 @@
 export type ConnectivityState =
   | 'ONLINE'
+  | 'DEGRADED'
   | 'OFFLINE'
   | 'NEVER_SEEN'
   | 'UNKNOWN';
@@ -10,6 +11,7 @@ export interface OperationsSummary {
   sites: number;
   cameras: number;
   online: number;
+  degraded: number;
   offline: number;
   neverSeen: number;
   unknown: number;
@@ -31,6 +33,7 @@ export interface FleetDevice {
   };
   connectivity: {
     state: ConnectivityState;
+    reasons: string[];
     lastHeartbeatAt: string | null;
     ageSeconds: number | null;
     expectedHeartbeatIntervalSeconds: number;

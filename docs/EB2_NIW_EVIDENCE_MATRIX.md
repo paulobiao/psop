@@ -117,3 +117,10 @@ Avoid relying only on narrative descriptions when source code, test output or sy
 The permanent security integration suite uses an isolated PostgreSQL database and validates first access, session rotation, refresh-token replay protection, role enforcement, tenant isolation, TOTP MFA, recovery-code consumption and audit redaction.
 
 The same suite executes locally and in GitHub Actions, creating reproducible evidence rather than relying exclusively on manual terminal validation.
+
+
+## Device health operations evidence
+
+PSOP includes a deterministic health-classification engine for online, degraded, offline, never-seen and unknown device states.
+
+The implementation connects heartbeat age, device-reported status, temperature and storage utilization to operational alerts and dashboard visibility. Permanent unit and PostgreSQL-backed integration tests provide reproducible evidence of health-state classification, role enforcement and organization-isolated fleet administration.

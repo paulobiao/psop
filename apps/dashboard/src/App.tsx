@@ -25,7 +25,10 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { getOperationsOverview } from './api';
+import {
+  evaluateFleetConnectivity,
+  getOperationsOverview,
+} from './api';
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
@@ -57,9 +60,10 @@ const connectivityOrder: Record<
   number
 > = {
   OFFLINE: 0,
-  NEVER_SEEN: 1,
-  UNKNOWN: 2,
-  ONLINE: 3,
+  DEGRADED: 1,
+  NEVER_SEEN: 2,
+  UNKNOWN: 3,
+  ONLINE: 4,
 };
 
 function formatDate(value: string | null): string {
@@ -99,6 +103,7 @@ function formatAge(seconds: number | null): string {
 function stateLabel(state: ConnectivityState): string {
   const labels: Record<ConnectivityState, string> = {
     ONLINE: 'Online',
+    DEGRADED: 'Degraded',
     OFFLINE: 'Offline',
     NEVER_SEEN: 'Never seen',
     UNKNOWN: 'Unknown',
@@ -300,6 +305,7 @@ function App() {
     useState<OperationsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [evaluating, setEvaluating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] =
     useState<string | null>(null);
@@ -484,6 +490,8 @@ function App() {
     }
 
     if (
+      overview.summary.degraded > 0 ||
+      overview.summary.warningAlerts > 0 ||
       overview.summary.neverSeen > 0 ||
       overview.summary.unknown > 0
     ) {
@@ -581,6 +589,43 @@ function App() {
             <span>{healthLabel}</span>
           </div>
 
+          {authUser.role !== 'VIEWER' && (
+            <button
+              className="refresh-button"
+              type="button"
+              disabled={evaluating}
+              onClick={() => {
+                setEvaluating(true);
+                setError(null);
+
+                void evaluateFleetConnectivity()
+                  .then(() =>
+                    loadOverview(true),
+                  )
+                  .catch((requestError) => {
+                    setError(
+                      requestError instanceof Error
+                        ? requestError.message
+                        : 'Unable to evaluate fleet connectivity',
+                    );
+                  })
+                  .finally(() => {
+                    setEvaluating(false);
+                  });
+              }}
+            >
+              <Activity
+                size={17}
+                className={
+                  evaluating
+                    ? 'spin'
+                    : undefined
+                }
+              />
+              Evaluate now
+            </button>
+          )}
+
           <button
             className="refresh-button"
             type="button"
@@ -649,6 +694,18 @@ function App() {
                 caption="Reporting normally"
                 icon={<CheckCircle2 size={20} />}
                 tone="positive"
+              />
+
+              <SummaryCard
+                label="Degraded"
+                value={overview.summary.degraded}
+                caption="Reporting with warnings"
+                icon={<AlertTriangle size={20} />}
+                tone={
+                  overview.summary.degraded > 0
+                    ? 'warning'
+                    : 'neutral'
+                }
               />
 
               <SummaryCard
@@ -760,6 +817,9 @@ function App() {
                         </option>
                         <option value="ONLINE">
                           Online
+                        </option>
+                        <option value="DEGRADED">
+                          Degraded
                         </option>
                         <option value="OFFLINE">
                           Offline

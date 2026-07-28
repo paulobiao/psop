@@ -4,6 +4,7 @@ import { DeviceController } from './controllers/device.controller.js';
 import { DeviceRepository } from './repositories/device.repository.js';
 import { DeviceConnectivityEventsService } from './services/device-connectivity-events.service.js';
 import { DeviceConnectivityMonitorService } from './services/device-connectivity-monitor.service.js';
+import { DeviceHealthService } from './services/device-health.service.js';
 import { DeviceTelemetryService } from './services/device-telemetry.service.js';
 import { DeviceService } from './services/device.service.js';
 
@@ -15,6 +16,7 @@ import { DeviceService } from './services/device.service.js';
     DeviceTelemetryService,
     DeviceConnectivityEventsService,
     DeviceConnectivityMonitorService,
+    DeviceHealthService,
     DeviceRepository,
   ],
   exports: [
