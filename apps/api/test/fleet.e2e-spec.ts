@@ -1,0 +1,520 @@
+import {
+  type INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { hash } from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
+import request from 'supertest';
+import {
+  PrismaClient,
+} from '../generated/prisma/client.js';
+import { AppModule } from '../src/app.module.js';
+
+const DATABASE_URL =
+  process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL is required for integration tests',
+  );
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: DATABASE_URL,
+  }),
+});
+
+const API = '/api/v1';
+
+const PASSWORD =
+  'FleetIntegrationPassword123!';
+
+interface LoginBody {
+  stage: 'AUTHENTICATED';
+  accessToken: string;
+}
+
+function bearer(
+  token: string,
+): {
+  Authorization: string;
+} {
+  return {
+    Authorization:
+      `Bearer ${token}`,
+  };
+}
+
+describe(
+  'PSOP device fleet integration',
+  () => {
+    let app: INestApplication;
+
+    const runId =
+      randomUUID().slice(0, 8);
+
+    let organizationAId: string;
+    let organizationBId: string;
+    let siteAId: string;
+    let siteBId: string;
+    let adminAEmail: string;
+    let viewerAEmail: string;
+    let localDeviceId: string;
+    let foreignDeviceId: string;
+
+    const organizationIds:
+      string[] = [];
+
+    beforeAll(async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.JWT_SECRET =
+        'fleet-access-secret-that-is-long-enough';
+      process.env.JWT_REFRESH_SECRET =
+        'fleet-refresh-secret-that-is-long-enough';
+      process.env.JWT_EXPIRES_SECONDS =
+        '900';
+      process.env
+        .JWT_REFRESH_EXPIRES_SECONDS =
+        '3600';
+      process.env.MFA_ENCRYPTION_KEY =
+        '0123456789abcdef0123456789abcdef' +
+        '0123456789abcdef0123456789abcdef';
+      process.env
+        .CONNECTIVITY_MONITOR_ENABLED =
+        'false';
+      process.env.AWS_REGION =
+        'us-east-1';
+
+      const moduleRef =
+        await Test
+          .createTestingModule({
+            imports: [AppModule],
+          })
+          .compile();
+
+      app =
+        moduleRef.createNestApplication();
+
+      app.setGlobalPrefix('api');
+
+      app.enableVersioning({
+        type: VersioningType.URI,
+      });
+
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+        }),
+      );
+
+      await app.init();
+      await prisma.$connect();
+
+      const organizationA =
+        await prisma.organization.create({
+          data: {
+            name:
+              `Fleet Organization A ${runId}`,
+            slug:
+              `fleet-a-${runId}`,
+          },
+        });
+
+      const organizationB =
+        await prisma.organization.create({
+          data: {
+            name:
+              `Fleet Organization B ${runId}`,
+            slug:
+              `fleet-b-${runId}`,
+          },
+        });
+
+      organizationAId =
+        organizationA.id;
+
+      organizationBId =
+        organizationB.id;
+
+      organizationIds.push(
+        organizationAId,
+        organizationBId,
+      );
+
+      const [siteA, siteB] =
+        await Promise.all([
+          prisma.site.create({
+            data: {
+              organizationId:
+                organizationAId,
+              name:
+                'Fleet Site A',
+              code:
+                `FLEET-A-${runId}`,
+              timezone:
+                'America/New_York',
+            },
+          }),
+          prisma.site.create({
+            data: {
+              organizationId:
+                organizationBId,
+              name:
+                'Fleet Site B',
+              code:
+                `FLEET-B-${runId}`,
+              timezone:
+                'America/New_York',
+            },
+          }),
+        ]);
+
+      siteAId = siteA.id;
+      siteBId = siteB.id;
+
+      adminAEmail =
+        `fleet-admin-${runId}@psop.test`;
+
+      viewerAEmail =
+        `fleet-viewer-${runId}@psop.test`;
+
+      const passwordHash =
+        await hash(PASSWORD, 12);
+
+      await Promise.all([
+        prisma.user.create({
+          data: {
+            organizationId:
+              organizationAId,
+            name:
+              'Fleet Administrator',
+            email: adminAEmail,
+            passwordHash,
+            role: 'ADMIN',
+            mustChangePassword:
+              false,
+          },
+        }),
+        prisma.user.create({
+          data: {
+            organizationId:
+              organizationAId,
+            name:
+              'Fleet Viewer',
+            email: viewerAEmail,
+            passwordHash,
+            role: 'VIEWER',
+            mustChangePassword:
+              false,
+          },
+        }),
+      ]);
+
+      const [localDevice, foreignDevice] =
+        await Promise.all([
+          prisma.device.create({
+            data: {
+              siteId: siteAId,
+              name:
+                'Local Seed Camera',
+              externalId:
+                `LOCAL-${runId}`,
+              deviceType: 'CAMERA',
+              status: 'ACTIVE',
+              expectedHeartbeatInterval:
+                60,
+            },
+          }),
+          prisma.device.create({
+            data: {
+              siteId: siteBId,
+              name:
+                'Foreign Camera',
+              externalId:
+                `FOREIGN-${runId}`,
+              deviceType: 'CAMERA',
+              status: 'ACTIVE',
+              expectedHeartbeatInterval:
+                60,
+            },
+          }),
+        ]);
+
+      localDeviceId =
+        localDevice.id;
+
+      foreignDeviceId =
+        foreignDevice.id;
+    });
+
+    afterAll(async () => {
+      const filter = {
+        in: organizationIds,
+      };
+
+      await prisma.auditLog.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.userSession.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.authChallenge.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.alert.deleteMany({
+        where: {
+          device: {
+            site: {
+              organizationId: filter,
+            },
+          },
+        },
+      });
+
+      await prisma.device.deleteMany({
+        where: {
+          site: {
+            organizationId: filter,
+          },
+        },
+      });
+
+      await prisma.user.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.site.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.organization
+        .deleteMany({
+          where: {
+            id: filter,
+          },
+        });
+
+      await prisma.$disconnect();
+      await app.close();
+    });
+
+    async function login(
+      email: string,
+    ): Promise<string> {
+      const response = await request(
+        app.getHttpServer(),
+      )
+        .post(`${API}/auth/login`)
+        .send({
+          email,
+          password: PASSWORD,
+        })
+        .expect(200);
+
+      return (
+        response.body as LoginBody
+      ).accessToken;
+    }
+
+    it(
+      'creates and updates a device inside its organization',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const created =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Fleet Integration Camera',
+              externalId:
+                `CAM-${runId}`,
+              deviceType: 'CAMERA',
+              manufacturer: 'Lorex',
+              model: 'L871T8-Z',
+              expectedHeartbeatInterval:
+                30,
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        expect(
+          created.body.siteId,
+        ).toBe(siteAId);
+
+        const updated =
+          await request(
+            app.getHttpServer(),
+          )
+            .patch(
+              `${API}/devices/${created.body.id}`,
+            )
+            .set(bearer(token))
+            .send({
+              name:
+                'Updated Fleet Camera',
+              expectedHeartbeatInterval:
+                45,
+            })
+            .expect(200);
+
+        expect(updated.body.name).toBe(
+          'Updated Fleet Camera',
+        );
+
+        expect(
+          updated.body
+            .expectedHeartbeatInterval,
+        ).toBe(45);
+      },
+    );
+
+    it(
+      'blocks cross-organization access and site assignment',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(`${API}/devices`)
+          .set(bearer(token))
+          .send({
+            siteId: siteBId,
+            name:
+              'Cross Tenant Camera',
+            externalId:
+              `CROSS-${runId}`,
+            deviceType: 'CAMERA',
+          })
+          .expect(404);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .patch(
+            `${API}/devices/${localDeviceId}`,
+          )
+          .set(bearer(token))
+          .send({
+            siteId: siteBId,
+          })
+          .expect(404);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .get(
+            `${API}/devices/${foreignDeviceId}`,
+          )
+          .set(bearer(token))
+          .expect(404);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .patch(
+            `${API}/devices/${foreignDeviceId}`,
+          )
+          .set(bearer(token))
+          .send({
+            name:
+              'Unauthorized Update',
+          })
+          .expect(404);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .delete(
+            `${API}/devices/${foreignDeviceId}`,
+          )
+          .set(bearer(token))
+          .expect(404);
+      },
+    );
+
+    it(
+      'prevents viewers from changing inventory',
+      async () => {
+        const token =
+          await login(viewerAEmail);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(`${API}/devices`)
+          .set(bearer(token))
+          .send({
+            siteId: siteAId,
+            name:
+              'Viewer Camera',
+            externalId:
+              `VIEWER-${runId}`,
+            deviceType: 'CAMERA',
+          })
+          .expect(403);
+      },
+    );
+
+    it(
+      'returns only organization-owned devices',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const response =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(`${API}/devices`)
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          response.body.some(
+            (device: {
+              id: string;
+            }) =>
+              device.id ===
+              foreignDeviceId,
+          ),
+        ).toBe(false);
+
+        expect(
+          response.body.some(
+            (device: {
+              id: string;
+            }) =>
+              device.id ===
+              localDeviceId,
+          ),
+        ).toBe(true);
+      },
+    );
+  },
+);

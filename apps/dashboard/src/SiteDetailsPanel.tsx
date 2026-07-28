@@ -207,6 +207,10 @@ export default function SiteDetailsPanel({
         (item) =>
           item.connectivity.state === 'ONLINE',
       ).length,
+      degraded: siteCameras.filter(
+        (item) =>
+          item.connectivity.state === 'DEGRADED',
+      ).length,
       offline: siteCameras.filter(
         (item) =>
           item.connectivity.state === 'OFFLINE',
@@ -377,6 +381,11 @@ export default function SiteDetailsPanel({
                   <article className="site-summary-online">
                     <span>Online</span>
                     <strong>{summary.online}</strong>
+                  </article>
+
+                  <article className="site-summary-warning">
+                    <span>Degraded</span>
+                    <strong>{summary.degraded}</strong>
                   </article>
 
                   <article className="site-summary-offline">

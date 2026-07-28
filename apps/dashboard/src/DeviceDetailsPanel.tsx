@@ -73,6 +73,7 @@ function formatDuration(seconds: number | null): string {
 function stateLabel(state: ConnectivityState): string {
   const labels: Record<ConnectivityState, string> = {
     ONLINE: 'Online',
+    DEGRADED: 'Degraded',
     OFFLINE: 'Offline',
     NEVER_SEEN: 'Never seen',
     UNKNOWN: 'Unknown',
@@ -351,6 +352,18 @@ export default function DeviceDetailsPanel({
                       .lastHeartbeatAt,
                   )}
                 </small>
+
+                {telemetry.connectivity.reasons.length > 0 && (
+                  <small className="health-reasons">
+                    {telemetry.connectivity.reasons
+                      .map((reason) =>
+                        reason
+                          .toLowerCase()
+                          .replaceAll('_', ' '),
+                      )
+                      .join(' · ')}
+                  </small>
+                )}
               </div>
 
               <span

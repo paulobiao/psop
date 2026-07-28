@@ -16,8 +16,10 @@ import {
   DeviceRepository,
   DeviceWithSite,
 } from '../repositories/device.repository';
-
-type ConnectivityState = 'ONLINE' | 'OFFLINE' | 'NEVER_SEEN' | 'UNKNOWN';
+import {
+  DeviceHealthService,
+  type ConnectivityState,
+} from './device-health.service.js';
 
 type TelemetryItem = Record<string, unknown>;
 
@@ -25,12 +27,12 @@ type TelemetryItem = Record<string, unknown>;
 export class DeviceTelemetryService {
   private readonly logger = new Logger(DeviceTelemetryService.name);
   private readonly tableName: string;
-  private readonly offlineMultiplier: number;
   private readonly documentClient: DynamoDBDocumentClient;
 
   constructor(
     configService: ConfigService,
     private readonly deviceRepository: DeviceRepository,
+    private readonly deviceHealthService: DeviceHealthService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -38,9 +40,6 @@ export class DeviceTelemetryService {
       configService.get<string>('DYNAMODB_STATUS_TABLE') ??
       'camera-fleet-monitor-status';
 
-    this.offlineMultiplier = Number(
-      configService.get<string>('TELEMETRY_OFFLINE_MULTIPLIER') ?? '2',
-    );
 
     this.documentClient = DynamoDBDocumentClient.from(
       new DynamoDBClient({
@@ -87,6 +86,7 @@ export class DeviceTelemetryService {
 
     const counts: Record<ConnectivityState, number> = {
       ONLINE: 0,
+      DEGRADED: 0,
       OFFLINE: 0,
       NEVER_SEEN: 0,
       UNKNOWN: 0,
@@ -101,6 +101,7 @@ export class DeviceTelemetryService {
       summary: {
         total: fleet.length,
         online: counts.ONLINE,
+        degraded: counts.DEGRADED,
         offline: counts.OFFLINE,
         neverSeen: counts.NEVER_SEEN,
         unknown: counts.UNKNOWN,
@@ -190,55 +191,96 @@ export class DeviceTelemetryService {
     return items;
   }
 
-  private buildResponse(device: DeviceWithSite, item?: TelemetryItem) {
-    const timestamp = this.toNumber(item?.timestamp);
-    const now = Math.floor(Date.now() / 1000);
-    const ageSeconds = timestamp === null ? null : Math.max(0, now - timestamp);
+  private buildResponse(
+    device: DeviceWithSite,
+    item?: TelemetryItem,
+  ) {
+    const timestamp =
+      this.toNumber(item?.timestamp);
 
-    const offlineAfterSeconds =
-      device.expectedHeartbeatInterval * this.offlineMultiplier;
+    const reportedStatus =
+      this.toString(item?.status);
 
-    let state: ConnectivityState;
+    const temperatureC =
+      this.toNumber(
+        item?.temperature_c,
+      );
 
-    if (!item) {
-      state = 'NEVER_SEEN';
-    } else if (timestamp === null) {
-      state = 'UNKNOWN';
-    } else if (ageSeconds !== null && ageSeconds <= offlineAfterSeconds) {
-      state = 'ONLINE';
-    } else {
-      state = 'OFFLINE';
-    }
+    const storageUsedPct =
+      this.toNumber(
+        item?.storage_used_pct,
+      );
+
+    const health =
+      this.deviceHealthService
+        .evaluate({
+          hasTelemetry:
+            Boolean(item),
+          timestampSeconds:
+            timestamp,
+          expectedHeartbeatIntervalSeconds:
+            device
+              .expectedHeartbeatInterval,
+          reportedStatus,
+          temperatureC,
+          storageUsedPct,
+        });
 
     return {
       device: {
         id: device.id,
         name: device.name,
-        externalId: device.externalId,
-        deviceType: device.deviceType,
-        administrativeStatus: device.status,
+        externalId:
+          device.externalId,
+        deviceType:
+          device.deviceType,
+        administrativeStatus:
+          device.status,
         siteId: device.siteId,
-        siteCode: device.site.code,
-        siteName: device.site.name,
+        siteCode:
+          device.site.code,
+        siteName:
+          device.site.name,
       },
       connectivity: {
-        state,
+        state: health.state,
+        reasons: health.reasons,
         lastHeartbeatAt:
-          timestamp === null ? null : new Date(timestamp * 1000).toISOString(),
-        ageSeconds,
-        expectedHeartbeatIntervalSeconds: device.expectedHeartbeatInterval,
-        offlineAfterSeconds,
+          health.lastHeartbeatAt,
+        ageSeconds:
+          health.ageSeconds,
+        expectedHeartbeatIntervalSeconds:
+          device
+            .expectedHeartbeatInterval,
+        offlineAfterSeconds:
+          health
+            .offlineAfterSeconds,
       },
       telemetry: item
         ? {
-            reportedStatus: this.toString(item.status),
-            temperatureC: this.toNumber(item.temperature_c),
-            bitrateKbps: this.toNumber(item.bitrate_kbps),
-            storageUsedPct: this.toNumber(item.storage_used_pct),
-            uptimeSeconds: this.toNumber(item.uptime_seconds),
-            model: this.toString(item.model),
-            firmware: this.toString(item.firmware),
-            isoTime: this.toString(item.iso_time),
+            reportedStatus,
+            temperatureC,
+            bitrateKbps:
+              this.toNumber(
+                item.bitrate_kbps,
+              ),
+            storageUsedPct,
+            uptimeSeconds:
+              this.toNumber(
+                item.uptime_seconds,
+              ),
+            model:
+              this.toString(
+                item.model,
+              ),
+            firmware:
+              this.toString(
+                item.firmware,
+              ),
+            isoTime:
+              this.toString(
+                item.iso_time,
+              ),
           }
         : null,
     };
