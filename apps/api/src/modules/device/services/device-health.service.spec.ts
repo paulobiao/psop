@@ -70,6 +70,28 @@ describe(
       },
     );
 
+    it.each([
+      'unknown',
+      'unexpected-vendor-state',
+    ])(
+      'returns UNKNOWN for unrecognized reported status %s',
+      (reportedStatus) => {
+        const result =
+          createService().evaluate({
+            ...baseInput,
+            reportedStatus,
+          });
+
+        expect(result.state).toBe(
+          'UNKNOWN',
+        );
+
+        expect(result.reasons).toEqual([
+          'UNRECOGNIZED_REPORTED_STATUS',
+        ]);
+      },
+    );
+
     it(
       'returns ONLINE for current healthy telemetry',
       () => {
