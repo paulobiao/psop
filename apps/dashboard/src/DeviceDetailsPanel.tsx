@@ -20,19 +20,24 @@ import {
 } from 'react';
 import {
   getDeviceAlerts,
+  evaluateFleetConnectivity,
   getDeviceConnectivityEvents,
   getDeviceTelemetry,
+  getTelemetryDemoStatus,
+  setDeviceDemoState,
 } from './api';
 import type {
   ConnectivityEvent,
   ConnectivityState,
   DeviceAlert,
   FleetDevice,
+  TelemetryDemoState,
 } from './types';
 
 interface DeviceDetailsPanelProps {
   deviceId: string;
   onClose: () => void;
+  onChanged?: () => void;
 }
 
 function formatDate(value: string | null): string {
@@ -173,6 +178,7 @@ function AlertEntry({ alert }: { alert: DeviceAlert }) {
 export default function DeviceDetailsPanel({
   deviceId,
   onClose,
+  onChanged,
 }: DeviceDetailsPanelProps) {
   const [telemetry, setTelemetry] =
     useState<FleetDevice | null>(null);
@@ -183,6 +189,9 @@ export default function DeviceDetailsPanel({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demoEnabled, setDemoEnabled] = useState(false);
+  const [demoChanging, setDemoChanging] =
+    useState<TelemetryDemoState | null>(null);
 
   const loadDetails = useCallback(
     async (silent = false) => {
@@ -199,6 +208,7 @@ export default function DeviceDetailsPanel({
           telemetryResult,
           eventsResult,
           alertsResult,
+          demoStatus,
         ] = await Promise.all([
           getDeviceTelemetry(
             deviceId,
@@ -209,9 +219,15 @@ export default function DeviceDetailsPanel({
             controller.signal,
           ),
           getDeviceAlerts(deviceId, controller.signal),
+          getTelemetryDemoStatus(
+            controller.signal,
+          ),
         ]);
 
         setTelemetry(telemetryResult);
+        setDemoEnabled(
+          demoStatus.enabled,
+        );
         setEvents(eventsResult.events);
         setAlerts(alertsResult);
         setError(null);
@@ -255,6 +271,33 @@ export default function DeviceDetailsPanel({
     () => alerts.filter((alert) => alert.status === 'OPEN'),
     [alerts],
   );
+
+
+  async function applyDemoState(
+    state: TelemetryDemoState,
+  ) {
+    setDemoChanging(state);
+    setError(null);
+
+    try {
+      await setDeviceDemoState(
+        deviceId,
+        state,
+      );
+
+      await evaluateFleetConnectivity();
+      await loadDetails(true);
+      onChanged?.();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to apply demo state',
+      );
+    } finally {
+      setDemoChanging(null);
+    }
+  }
 
   return (
     <div
@@ -331,6 +374,54 @@ export default function DeviceDetailsPanel({
 
         {telemetry && (
           <div className="device-details__body">
+            {demoEnabled && (
+              <section className="demo-lab">
+                <div>
+                  <span className="eyebrow">
+                    Local simulation
+                  </span>
+                  <h3>Telemetry Demo Lab</h3>
+                  <p>
+                    Apply a controlled camera state without
+                    calling AWS services.
+                  </p>
+                </div>
+
+                <div className="demo-lab__actions">
+                  {(
+                    [
+                      'ONLINE',
+                      'DEGRADED',
+                      'OFFLINE',
+                      'NEVER_SEEN',
+                      'UNKNOWN',
+                    ] as TelemetryDemoState[]
+                  ).map((state) => (
+                    <button
+                      key={state}
+                      type="button"
+                      className={`demo-state-button demo-state-button--${state.toLowerCase()}`}
+                      disabled={
+                        demoChanging !== null
+                      }
+                      onClick={() =>
+                        void applyDemoState(
+                          state,
+                        )
+                      }
+                    >
+                      {demoChanging === state
+                        ? 'Applying…'
+                        : state.replace(
+                            '_',
+                            ' ',
+                          )}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className="connection-hero">
               <div
                 className={`connection-hero__icon connection-hero__icon--${telemetry.connectivity.state.toLowerCase()}`}

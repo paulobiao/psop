@@ -124,3 +124,8 @@ The same suite executes locally and in GitHub Actions, creating reproducible evi
 PSOP includes a deterministic health-classification engine for online, degraded, offline, never-seen and unknown device states.
 
 The implementation connects heartbeat age, device-reported status, temperature and storage utilization to operational alerts and dashboard visibility. Permanent unit and PostgreSQL-backed integration tests provide reproducible evidence of health-state classification, role enforcement and organization-isolated fleet administration.
+## Telemetry Demo Lab evidence
+
+PSOP includes a controlled local telemetry laboratory that demonstrates online, degraded, offline, never-seen and unknown camera states without cloud-resource modification.
+
+The laboratory exercises the same health-classification, alert synchronization, role enforcement and organization-isolation logic used by the operational platform. Permanent unit and PostgreSQL-backed integration tests provide reproducible technical evidence.

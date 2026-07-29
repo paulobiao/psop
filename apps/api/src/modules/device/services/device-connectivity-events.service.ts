@@ -19,6 +19,7 @@ import {
   DeviceWithSite,
 } from '../repositories/device.repository.js';
 import { DeviceTelemetryService } from './device-telemetry.service.js';
+import { TelemetryDemoService } from './telemetry-demo.service.js';
 
 @Injectable()
 export class DeviceConnectivityEventsService {
@@ -27,12 +28,15 @@ export class DeviceConnectivityEventsService {
   private readonly tableName: string;
   private readonly retentionDays: number;
   private readonly documentClient: DynamoDBDocumentClient;
+  private readonly demoEvents =
+    new Map<string, Record<string, unknown>[]>();
 
   constructor(
     configService: ConfigService,
     private readonly deviceRepository: DeviceRepository,
     private readonly telemetryService: DeviceTelemetryService,
     private readonly alertService: AlertService,
+    private readonly telemetryDemoService: TelemetryDemoService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -90,12 +94,22 @@ export class DeviceConnectivityEventsService {
           expires_at: Math.floor(timestamp / 1000) + this.retentionDays * 86400,
         };
 
-        await this.documentClient.send(
-          new PutCommand({
-            TableName: this.tableName,
-            Item: event,
-          }),
-        );
+        if (
+          this.telemetryDemoService
+            .isEnabled()
+        ) {
+          this.storeDemoEvent(
+            partitionKey,
+            event,
+          );
+        } else {
+          await this.documentClient.send(
+            new PutCommand({
+              TableName: this.tableName,
+              Item: event,
+            }),
+          );
+        }
 
         events.push(event);
       }
@@ -127,22 +141,49 @@ export class DeviceConnectivityEventsService {
         )
       : null;
     const items: Record<string, unknown>[] = [];
-    let exclusiveStartKey: Record<string, unknown> | undefined;
 
-    try {
-      do {
-        const response = await this.documentClient.send(
-          new ScanCommand({
-            TableName: this.tableName,
-            ExclusiveStartKey: exclusiveStartKey,
-          }),
+    if (
+      this.telemetryDemoService
+        .isEnabled()
+    ) {
+      for (
+        const deviceEvents of
+        this.demoEvents.values()
+      ) {
+        items.push(
+          ...deviceEvents,
         );
+      }
+    } else {
+      let exclusiveStartKey:
+        Record<string, unknown> |
+        undefined;
 
-        items.push(...(response.Items ?? []));
-        exclusiveStartKey = response.LastEvaluatedKey;
-      } while (exclusiveStartKey && items.length < 1000);
-    } catch (error) {
-      this.handleStorageError(error);
+      try {
+        do {
+          const response =
+            await this.documentClient.send(
+              new ScanCommand({
+                TableName:
+                  this.tableName,
+                ExclusiveStartKey:
+                  exclusiveStartKey,
+              }),
+            );
+
+          items.push(
+            ...(response.Items ?? []),
+          );
+
+          exclusiveStartKey =
+            response.LastEvaluatedKey;
+        } while (
+          exclusiveStartKey &&
+          items.length < 1000
+        );
+      } catch (error) {
+        this.handleStorageError(error);
+      }
     }
 
     const scopedItems = allowedDeviceIds
@@ -183,22 +224,32 @@ export class DeviceConnectivityEventsService {
 
     let events: Record<string, unknown>[];
 
-    try {
-      const response = await this.documentClient.send(
-        new QueryCommand({
-          TableName: this.tableName,
-          KeyConditionExpression: 'camera_id = :cameraId',
-          ExpressionAttributeValues: {
-            ':cameraId': device.id,
-          },
-          ScanIndexForward: false,
-          Limit: 50,
-        }),
-      );
+    if (
+      this.telemetryDemoService
+        .isEnabled()
+    ) {
+      events =
+        this.demoEvents.get(
+          device.id,
+        ) ?? [];
+    } else {
+      try {
+        const response = await this.documentClient.send(
+          new QueryCommand({
+            TableName: this.tableName,
+            KeyConditionExpression: 'camera_id = :cameraId',
+            ExpressionAttributeValues: {
+              ':cameraId': device.id,
+            },
+            ScanIndexForward: false,
+            Limit: 50,
+          }),
+        );
 
-      events = response.Items ?? [];
-    } catch (error) {
-      this.handleStorageError(error);
+        events = response.Items ?? [];
+      } catch (error) {
+        this.handleStorageError(error);
+      }
     }
 
     return {
@@ -229,6 +280,15 @@ export class DeviceConnectivityEventsService {
   private async findLatestEvent(
     partitionKey: string,
   ): Promise<Record<string, unknown> | undefined> {
+    if (
+      this.telemetryDemoService
+        .isEnabled()
+    ) {
+      return this.demoEvents
+        .get(partitionKey)
+        ?.at(0);
+    }
+
     const response = await this.documentClient.send(
       new QueryCommand({
         TableName: this.tableName,
@@ -242,6 +302,24 @@ export class DeviceConnectivityEventsService {
     );
 
     return response.Items?.[0];
+  }
+
+  private storeDemoEvent(
+    partitionKey: string,
+    event: Record<string, unknown>,
+  ): void {
+    const current =
+      this.demoEvents.get(
+        partitionKey,
+      ) ?? [];
+
+    this.demoEvents.set(
+      partitionKey,
+      [
+        event,
+        ...current,
+      ].slice(0, 50),
+    );
   }
 
   private deviceSummary(device: DeviceWithSite) {

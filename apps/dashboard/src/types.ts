@@ -7,6 +7,8 @@ export type ConnectivityState =
 
 export type AlertSeverity = 'CRITICAL' | 'WARNING';
 
+export type TelemetryDemoState = ConnectivityState;
+
 export interface OperationsSummary {
   sites: number;
   cameras: number;

@@ -1049,6 +1049,7 @@ function App() {
         <DeviceDetailsPanel
           deviceId={selectedDeviceId}
           onClose={() => setSelectedDeviceId(null)}
+          onChanged={() => void loadOverview(true)}
         />
       )}
     </div>

@@ -6,6 +6,7 @@ import { DeviceConnectivityEventsService } from './services/device-connectivity-
 import { DeviceConnectivityMonitorService } from './services/device-connectivity-monitor.service.js';
 import { DeviceHealthService } from './services/device-health.service.js';
 import { DeviceTelemetryService } from './services/device-telemetry.service.js';
+import { TelemetryDemoService } from './services/telemetry-demo.service.js';
 import { DeviceService } from './services/device.service.js';
 
 @Module({
@@ -17,12 +18,14 @@ import { DeviceService } from './services/device.service.js';
     DeviceConnectivityEventsService,
     DeviceConnectivityMonitorService,
     DeviceHealthService,
+    TelemetryDemoService,
     DeviceRepository,
   ],
   exports: [
     DeviceService,
     DeviceTelemetryService,
     DeviceConnectivityEventsService,
+    TelemetryDemoService,
   ],
 })
 export class DeviceModule {}

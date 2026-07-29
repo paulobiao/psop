@@ -12,9 +12,11 @@ import type { AuthUser } from '../../auth/auth.types.js';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
+import { SetDemoTelemetryStateDto } from '../dto/set-demo-telemetry-state.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
+import { TelemetryDemoService } from '../services/telemetry-demo.service';
 import { DeviceService } from '../services/device.service';
 
 @Controller({
@@ -26,11 +28,53 @@ export class DeviceController {
     private readonly deviceService: DeviceService,
     private readonly deviceTelemetryService: DeviceTelemetryService,
     private readonly connectivityEventsService: DeviceConnectivityEventsService,
+    private readonly telemetryDemoService: TelemetryDemoService,
   ) {}
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
     return this.deviceService.findAll(user.organizationId);
+  }
+
+  @Get('demo/status')
+  getDemoStatus() {
+    return this.telemetryDemoService.getStatus();
+  }
+
+  @Roles('ADMIN', 'OPERATOR')
+  @Post(':id/demo-state')
+  async setDemoState(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() data: SetDemoTelemetryStateDto,
+  ) {
+    await this.telemetryDemoService.setState(
+      user.organizationId,
+      id,
+      data.state,
+    );
+
+    return this.deviceTelemetryService.findByDeviceId(
+      id,
+      user.organizationId,
+    );
+  }
+
+  @Roles('ADMIN', 'OPERATOR')
+  @Delete(':id/demo-state')
+  async clearDemoState(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.telemetryDemoService.clearState(
+      user.organizationId,
+      id,
+    );
+
+    return this.deviceTelemetryService.findByDeviceId(
+      id,
+      user.organizationId,
+    );
   }
 
   @Get('telemetry')

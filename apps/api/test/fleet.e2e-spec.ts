@@ -88,6 +88,8 @@ describe(
         'false';
       process.env.AWS_REGION =
         'us-east-1';
+      process.env.TELEMETRY_DEMO_MODE =
+        'true';
 
       const moduleRef =
         await Test
@@ -478,6 +480,206 @@ describe(
             deviceType: 'CAMERA',
           })
           .expect(403);
+      },
+    );
+
+    it(
+      'runs controlled telemetry states without AWS',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const status =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/devices/demo/status`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          status.body.enabled,
+        ).toBe(true);
+
+        const degraded =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(
+              `${API}/devices/${localDeviceId}/demo-state`,
+            )
+            .set(bearer(token))
+            .send({
+              state: 'DEGRADED',
+            })
+            .expect(201);
+
+        expect(
+          degraded.body
+            .connectivity.state,
+        ).toBe('DEGRADED');
+
+        expect(
+          degraded.body
+            .connectivity.reasons,
+        ).toEqual(
+          expect.arrayContaining([
+            'REPORTED_STATUS_NOT_HEALTHY',
+            'HIGH_TEMPERATURE',
+            'HIGH_STORAGE_USAGE',
+          ]),
+        );
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/telemetry/evaluate`,
+          )
+          .set(bearer(token))
+          .expect(201);
+
+        const alerts =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/alerts?deviceId=${localDeviceId}`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          alerts.body.some(
+            (alert: {
+              status: string;
+              severity: string;
+              connectivityState:
+                string;
+            }) =>
+              alert.status === 'OPEN' &&
+              alert.severity === 'WARNING' &&
+              alert.connectivityState ===
+                'DEGRADED',
+          ),
+        ).toBe(true);
+
+        const online =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(
+              `${API}/devices/${localDeviceId}/demo-state`,
+            )
+            .set(bearer(token))
+            .send({
+              state: 'ONLINE',
+            })
+            .expect(201);
+
+        expect(
+          online.body
+            .connectivity.state,
+        ).toBe('ONLINE');
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/telemetry/evaluate`,
+          )
+          .set(bearer(token))
+          .expect(201);
+
+        const resolved =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/alerts?deviceId=${localDeviceId}`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          resolved.body.some(
+            (alert: {
+              status: string;
+              connectivityState:
+                string | null;
+            }) =>
+              alert.status ===
+                'RESOLVED' &&
+              alert.connectivityState ===
+                'ONLINE',
+          ),
+        ).toBe(true);
+
+        const events =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/devices/${localDeviceId}/connectivity-events`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          events.body.events.map(
+            (event: {
+              current_state:
+                string;
+            }) =>
+              event.current_state,
+          ),
+        ).toEqual(
+          expect.arrayContaining([
+            'DEGRADED',
+            'ONLINE',
+          ]),
+        );
+      },
+    );
+
+    it(
+      'enforces roles and tenant isolation for demo controls',
+      async () => {
+        const viewerToken =
+          await login(viewerAEmail);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/${localDeviceId}/demo-state`,
+          )
+          .set(
+            bearer(viewerToken),
+          )
+          .send({
+            state: 'OFFLINE',
+          })
+          .expect(403);
+
+        const adminToken =
+          await login(adminAEmail);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/${foreignDeviceId}/demo-state`,
+          )
+          .set(
+            bearer(adminToken),
+          )
+          .send({
+            state: 'ONLINE',
+          })
+          .expect(404);
       },
     );
 

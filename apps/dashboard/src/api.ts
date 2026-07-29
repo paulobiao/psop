@@ -7,6 +7,7 @@ import type {
   InventoryDevice,
   OperationsOverview,
   Site,
+  TelemetryDemoState,
 } from './types';
 
 export interface AuthUser {
@@ -297,6 +298,36 @@ Promise<{
     '/devices/telemetry/evaluate',
     {
       method: 'POST',
+    },
+  );
+}
+
+
+export function getTelemetryDemoStatus(
+  signal?: AbortSignal,
+): Promise<{
+  enabled: boolean;
+  states: TelemetryDemoState[];
+  activeOverrides: number;
+}> {
+  return requestJson(
+    '/devices/demo/status',
+    {},
+    signal,
+  );
+}
+
+export function setDeviceDemoState(
+  deviceId: string,
+  state: TelemetryDemoState,
+): Promise<FleetDevice> {
+  return requestJson(
+    `/devices/${deviceId}/demo-state`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        state,
+      }),
     },
   );
 }

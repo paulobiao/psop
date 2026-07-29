@@ -1,0 +1,145 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PSOP: API Dev",
+      "type": "shell",
+      "command": "pnpm --filter api start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Dashboard Dev",
+      "type": "shell",
+      "command": "pnpm --filter dashboard dev",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Start API + Dashboard",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "PSOP: API Dev",
+        "PSOP: Dashboard Dev"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Unit Tests",
+      "type": "shell",
+      "command": "pnpm test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Integration Tests",
+      "type": "shell",
+      "command": "pnpm run test:integration",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Validate",
+      "type": "shell",
+      "command": "pnpm run check",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Full Validation",
+      "type": "shell",
+      "command": "pnpm run check:full",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Prisma Studio",
+      "type": "shell",
+      "command": "pnpm --filter api exec prisma studio",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: API Demo Dev",
+      "type": "shell",
+      "command": "pnpm --filter api start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "TELEMETRY_DEMO_MODE": "true"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Start Telemetry Demo Lab",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "PSOP: API Demo Dev",
+        "PSOP: Dashboard Dev"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
