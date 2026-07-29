@@ -13,6 +13,7 @@ export type DeviceHealthReason =
   | 'INVALID_TIMESTAMP'
   | 'HEARTBEAT_OVERDUE'
   | 'REPORTED_STATUS_NOT_HEALTHY'
+  | 'UNRECOGNIZED_REPORTED_STATUS'
   | 'HIGH_TEMPERATURE'
   | 'HIGH_STORAGE_USAGE';
 
@@ -125,15 +126,39 @@ export class DeviceHealthService {
       };
     }
 
+    const normalizedStatus =
+      input.reportedStatus
+        ?.trim()
+        .toLowerCase() ??
+      null;
+
+    if (
+      normalizedStatus &&
+      !this.healthyStatuses().has(
+        normalizedStatus,
+      ) &&
+      !this.degradedStatuses().has(
+        normalizedStatus,
+      )
+    ) {
+      return {
+        state: 'UNKNOWN',
+        reasons: [
+          'UNRECOGNIZED_REPORTED_STATUS',
+        ],
+        lastHeartbeatAt,
+        ageSeconds,
+        offlineAfterSeconds,
+      };
+    }
+
     const reasons:
       DeviceHealthReason[] = [];
 
     if (
-      input.reportedStatus &&
-      !this.healthyStatuses().has(
-        input.reportedStatus
-          .trim()
-          .toLowerCase(),
+      normalizedStatus &&
+      this.degradedStatuses().has(
+        normalizedStatus,
       )
     ) {
       reasons.push(
@@ -181,6 +206,16 @@ export class DeviceHealthService {
       'healthy',
       'active',
       'running',
+    ]);
+  }
+
+  private degradedStatuses():
+  Set<string> {
+    return new Set([
+      'offline',
+      'warning',
+      'maintenance',
+      'error',
     ]);
   }
 

@@ -65,14 +65,35 @@ function formatDuration(seconds: number | null): string {
   }
 
   if (seconds < 3600) {
-    return `${Math.floor(seconds / 60)} minutes`;
+    const minutes =
+      Math.floor(seconds / 60);
+
+    return `${minutes} ${
+      minutes === 1
+        ? 'minute'
+        : 'minutes'
+    }`;
   }
 
   if (seconds < 86400) {
-    return `${Math.floor(seconds / 3600)} hours`;
+    const hours =
+      Math.floor(seconds / 3600);
+
+    return `${hours} ${
+      hours === 1
+        ? 'hour'
+        : 'hours'
+    }`;
   }
 
-  return `${Math.floor(seconds / 86400)} days`;
+  const days =
+    Math.floor(seconds / 86400);
+
+  return `${days} ${
+    days === 1
+      ? 'day'
+      : 'days'
+  }`;
 }
 
 function stateLabel(state: ConnectivityState): string {
