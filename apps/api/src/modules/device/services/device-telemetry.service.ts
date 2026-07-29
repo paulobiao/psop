@@ -20,6 +20,7 @@ import {
   DeviceHealthService,
   type ConnectivityState,
 } from './device-health.service.js';
+import { TelemetryDemoService } from './telemetry-demo.service.js';
 
 type TelemetryItem = Record<string, unknown>;
 
@@ -33,6 +34,7 @@ export class DeviceTelemetryService {
     configService: ConfigService,
     private readonly deviceRepository: DeviceRepository,
     private readonly deviceHealthService: DeviceHealthService,
+    private readonly telemetryDemoService: TelemetryDemoService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -55,15 +57,32 @@ export class DeviceTelemetryService {
 
     let items: TelemetryItem[];
 
-    try {
-      items = await this.readFleetItems(
-        devices.map((device) => ({
-          site_id: device.siteId,
-          camera_id: device.id,
-        })),
-      );
-    } catch (error) {
-      this.handleStorageError(error);
+    if (
+      this.telemetryDemoService
+        .isEnabled()
+    ) {
+      items = devices
+        .map((device) =>
+          this.telemetryDemoService
+            .getItem(device),
+        )
+        .filter(
+          (
+            item,
+          ): item is TelemetryItem =>
+            Boolean(item),
+        );
+    } else {
+      try {
+        items = await this.readFleetItems(
+          devices.map((device) => ({
+            site_id: device.siteId,
+            camera_id: device.id,
+          })),
+        );
+      } catch (error) {
+        this.handleStorageError(error);
+      }
     }
 
     const telemetryByDevice = new Map(
@@ -131,20 +150,29 @@ export class DeviceTelemetryService {
 
     let item: TelemetryItem | undefined;
 
-    try {
-      const response = await this.documentClient.send(
-        new GetCommand({
-          TableName: this.tableName,
-          Key: {
-            site_id: device.siteId,
-            camera_id: device.id,
-          },
-        }),
-      );
+    if (
+      this.telemetryDemoService
+        .isEnabled()
+    ) {
+      item =
+        this.telemetryDemoService
+          .getItem(device);
+    } else {
+      try {
+        const response = await this.documentClient.send(
+          new GetCommand({
+            TableName: this.tableName,
+            Key: {
+              site_id: device.siteId,
+              camera_id: device.id,
+            },
+          }),
+        );
 
-      item = response.Item;
-    } catch (error) {
-      this.handleStorageError(error);
+        item = response.Item;
+      } catch (error) {
+        this.handleStorageError(error);
+      }
     }
 
     return this.buildResponse(device, item);

@@ -4289,3 +4289,67 @@ tbody tr:hover {
   color: #fbbf24;
   text-transform: capitalize;
 }
+/* Telemetry Demo Lab */
+.demo-lab {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(14, 116, 144, 0.08);
+}
+
+.demo-lab h3,
+.demo-lab p {
+  margin: 0;
+}
+
+.demo-lab p {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.demo-lab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.demo-state-button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.demo-state-button:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.65);
+}
+
+.demo-state-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.demo-state-button--online {
+  color: #4ade80;
+}
+
+.demo-state-button--degraded {
+  color: #fbbf24;
+}
+
+.demo-state-button--offline {
+  color: #fb7185;
+}
+
+.demo-state-button--never_seen,
+.demo-state-button--unknown {
+  color: #cbd5e1;
+}
