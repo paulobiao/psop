@@ -21,6 +21,7 @@ import {
   type ConnectivityState,
 } from './device-health.service.js';
 import { TelemetryDemoService } from './telemetry-demo.service.js';
+import { LocalTelemetryService } from './local-telemetry.service.js';
 
 type TelemetryItem = Record<string, unknown>;
 
@@ -35,6 +36,7 @@ export class DeviceTelemetryService {
     private readonly deviceRepository: DeviceRepository,
     private readonly deviceHealthService: DeviceHealthService,
     private readonly telemetryDemoService: TelemetryDemoService,
+    private readonly localTelemetryService: LocalTelemetryService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -72,6 +74,12 @@ export class DeviceTelemetryService {
           ): item is TelemetryItem =>
             Boolean(item),
         );
+    } else if (
+      this.localTelemetryService.isEnabled()
+    ) {
+      items =
+        await this.localTelemetryService
+          .findFleetItems(devices);
     } else {
       try {
         items = await this.readFleetItems(
@@ -157,6 +165,12 @@ export class DeviceTelemetryService {
       item =
         this.telemetryDemoService
           .getItem(device);
+    } else if (
+      this.localTelemetryService.isEnabled()
+    ) {
+      item =
+        await this.localTelemetryService
+          .findItem(device);
     } else {
       try {
         const response = await this.documentClient.send(

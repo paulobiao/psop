@@ -20,6 +20,7 @@ import {
 } from '../repositories/device.repository.js';
 import { DeviceTelemetryService } from './device-telemetry.service.js';
 import { TelemetryDemoService } from './telemetry-demo.service.js';
+import { LocalTelemetryService } from './local-telemetry.service.js';
 
 @Injectable()
 export class DeviceConnectivityEventsService {
@@ -37,6 +38,7 @@ export class DeviceConnectivityEventsService {
     private readonly telemetryService: DeviceTelemetryService,
     private readonly alertService: AlertService,
     private readonly telemetryDemoService: TelemetryDemoService,
+    private readonly localTelemetryService: LocalTelemetryService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -102,6 +104,12 @@ export class DeviceConnectivityEventsService {
             partitionKey,
             event,
           );
+        } else if (
+          this.localTelemetryService
+            .isEnabled()
+        ) {
+          await this.localTelemetryService
+            .storeEvent(event);
         } else {
           await this.documentClient.send(
             new PutCommand({
@@ -154,6 +162,19 @@ export class DeviceConnectivityEventsService {
           ...deviceEvents,
         );
       }
+    } else if (
+      this.localTelemetryService
+        .isEnabled()
+    ) {
+      items.push(
+        ...await this.localTelemetryService
+          .findRecentEvents(
+            allowedDeviceIds
+              ? [...allowedDeviceIds]
+              : undefined,
+            1000,
+          ),
+      );
     } else {
       let exclusiveStartKey:
         Record<string, unknown> |
@@ -232,6 +253,16 @@ export class DeviceConnectivityEventsService {
         this.demoEvents.get(
           device.id,
         ) ?? [];
+    } else if (
+      this.localTelemetryService
+        .isEnabled()
+    ) {
+      events =
+        await this.localTelemetryService
+          .findEventsByDevice(
+            device.id,
+            50,
+          );
     } else {
       try {
         const response = await this.documentClient.send(
@@ -287,6 +318,16 @@ export class DeviceConnectivityEventsService {
       return this.demoEvents
         .get(partitionKey)
         ?.at(0);
+    }
+
+    if (
+      this.localTelemetryService
+        .isEnabled()
+    ) {
+      return this.localTelemetryService
+        .findLatestEvent(
+          partitionKey,
+        );
     }
 
     const response = await this.documentClient.send(

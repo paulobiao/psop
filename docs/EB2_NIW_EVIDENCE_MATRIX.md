@@ -129,3 +129,7 @@ The implementation connects heartbeat age, device-reported status, temperature a
 PSOP includes a controlled local telemetry laboratory that demonstrates online, degraded, offline, never-seen and unknown camera states without cloud-resource modification.
 
 The laboratory exercises the same health-classification, alert synchronization, role enforcement and organization-isolation logic used by the operational platform. Permanent unit and PostgreSQL-backed integration tests provide reproducible technical evidence.
+
+## Local telemetry ingestion evidence
+
+PSOP includes a PostgreSQL-backed device ingestion path with independent camera credentials, one-time key rotation, validated heartbeat payloads, persistent telemetry snapshots, connectivity history and automatic alert synchronization.

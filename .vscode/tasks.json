@@ -140,6 +140,76 @@
         "PSOP: Dashboard Dev"
       ],
       "problemMatcher": []
+    },
+    {
+      "label": "PSOP: API Local Ingestion Dev",
+      "type": "shell",
+      "command": "pnpm --filter api start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "LOCAL_TELEMETRY_INGESTION_ENABLED": "true",
+          "TELEMETRY_DEMO_MODE": "false"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Start Local Telemetry Ingestion",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "PSOP: API Local Ingestion Dev",
+        "PSOP: Dashboard Dev"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Local HTTP Simulator",
+      "type": "shell",
+      "command": "python3 apps/simulator/local_http_simulator.py --device-id ${input:psopDeviceId} --state ${input:psopTelemetryState}",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PSOP_DEVICE_KEY": "${input:psopDeviceKey}"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "psopDeviceId",
+      "type": "promptString",
+      "description": "PSOP camera UUID",
+      "default": "43c3f5c8-d702-4a20-90da-5e842d4e4e4f"
+    },
+    {
+      "id": "psopDeviceKey",
+      "type": "promptString",
+      "description": "One-time PSOP device key",
+      "password": true
+    },
+    {
+      "id": "psopTelemetryState",
+      "type": "pickString",
+      "description": "Telemetry state",
+      "options": [
+        "online",
+        "degraded",
+        "offline",
+        "unknown"
+      ],
+      "default": "online"
     }
   ]
 }

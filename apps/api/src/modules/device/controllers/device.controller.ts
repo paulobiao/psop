@@ -16,6 +16,7 @@ import { SetDemoTelemetryStateDto } from '../dto/set-demo-telemetry-state.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
+import { DeviceTelemetryIngestionService } from '../services/device-telemetry-ingestion.service.js';
 import { TelemetryDemoService } from '../services/telemetry-demo.service';
 import { DeviceService } from '../services/device.service';
 
@@ -29,11 +30,24 @@ export class DeviceController {
     private readonly deviceTelemetryService: DeviceTelemetryService,
     private readonly connectivityEventsService: DeviceConnectivityEventsService,
     private readonly telemetryDemoService: TelemetryDemoService,
+    private readonly telemetryIngestionService: DeviceTelemetryIngestionService,
   ) {}
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
     return this.deviceService.findAll(user.organizationId);
+  }
+
+  @Roles('ADMIN', 'OPERATOR')
+  @Post(':id/ingestion-key/rotate')
+  rotateIngestionKey(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.telemetryIngestionService.rotateKey(
+      user.organizationId,
+      id,
+    );
   }
 
   @Get('demo/status')
