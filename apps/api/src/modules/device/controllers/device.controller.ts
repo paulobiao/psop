@@ -38,16 +38,21 @@ export class DeviceController {
     return this.deviceService.findAll(user.organizationId);
   }
 
+  @Get(':id/ingestion-key')
+  getIngestionKeyStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.telemetryIngestionService.getKeyStatus(user.organizationId, id);
+  }
+
   @Roles('ADMIN', 'OPERATOR')
   @Post(':id/ingestion-key/rotate')
   rotateIngestionKey(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.telemetryIngestionService.rotateKey(
-      user.organizationId,
-      id,
-    );
+    return this.telemetryIngestionService.rotateKey(user.organizationId, id);
   }
 
   @Get('demo/status')
@@ -68,10 +73,7 @@ export class DeviceController {
       data.state,
     );
 
-    return this.deviceTelemetryService.findByDeviceId(
-      id,
-      user.organizationId,
-    );
+    return this.deviceTelemetryService.findByDeviceId(id, user.organizationId);
   }
 
   @Roles('ADMIN', 'OPERATOR')
@@ -80,30 +82,20 @@ export class DeviceController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    await this.telemetryDemoService.clearState(
-      user.organizationId,
-      id,
-    );
+    await this.telemetryDemoService.clearState(user.organizationId, id);
 
-    return this.deviceTelemetryService.findByDeviceId(
-      id,
-      user.organizationId,
-    );
+    return this.deviceTelemetryService.findByDeviceId(id, user.organizationId);
   }
 
   @Get('telemetry')
   findFleetTelemetry(@CurrentUser() user: AuthUser) {
-    return this.deviceTelemetryService.findFleet(
-      user.organizationId,
-    );
+    return this.deviceTelemetryService.findFleet(user.organizationId);
   }
 
   @Roles('ADMIN', 'OPERATOR')
   @Post('telemetry/evaluate')
   evaluateConnectivity(@CurrentUser() user: AuthUser) {
-    return this.connectivityEventsService.evaluateFleet(
-      user.organizationId,
-    );
+    return this.connectivityEventsService.evaluateFleet(user.organizationId);
   }
 
   @Get(':id/connectivity-events')
@@ -122,10 +114,7 @@ export class DeviceController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.deviceTelemetryService.findByDeviceId(
-      id,
-      user.organizationId,
-    );
+    return this.deviceTelemetryService.findByDeviceId(id, user.organizationId);
   }
 
   @Get(':id')
@@ -133,22 +122,13 @@ export class DeviceController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.deviceService.findOne(
-      user.organizationId,
-      id,
-    );
+    return this.deviceService.findOne(user.organizationId, id);
   }
 
   @Roles('ADMIN', 'OPERATOR')
   @Post()
-  create(
-    @CurrentUser() user: AuthUser,
-    @Body() data: CreateDeviceDto,
-  ) {
-    return this.deviceService.create(
-      user.organizationId,
-      data,
-    );
+  create(@CurrentUser() user: AuthUser, @Body() data: CreateDeviceDto) {
+    return this.deviceService.create(user.organizationId, data);
   }
 
   @Roles('ADMIN', 'OPERATOR')
@@ -158,11 +138,7 @@ export class DeviceController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() data: UpdateDeviceDto,
   ) {
-    return this.deviceService.update(
-      user.organizationId,
-      id,
-      data,
-    );
+    return this.deviceService.update(user.organizationId, id, data);
   }
 
   @Roles('ADMIN', 'OPERATOR')
@@ -171,9 +147,6 @@ export class DeviceController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.deviceService.remove(
-      user.organizationId,
-      id,
-    );
+    return this.deviceService.remove(user.organizationId, id);
   }
 }

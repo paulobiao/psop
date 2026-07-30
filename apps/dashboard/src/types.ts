@@ -1,13 +1,22 @@
 export type ConnectivityState =
-  | 'ONLINE'
-  | 'DEGRADED'
-  | 'OFFLINE'
-  | 'NEVER_SEEN'
-  | 'UNKNOWN';
+  "ONLINE" | "DEGRADED" | "OFFLINE" | "NEVER_SEEN" | "UNKNOWN";
 
-export type AlertSeverity = 'CRITICAL' | 'WARNING';
+export type AlertSeverity = "CRITICAL" | "WARNING";
 
 export type TelemetryDemoState = ConnectivityState;
+
+export interface DeviceIngestionKeyStatus {
+  enabled: boolean;
+  configured: boolean;
+  keyPrefix: string | null;
+  rotatedAt: string | null;
+}
+
+export interface RotatedDeviceIngestionKey extends DeviceIngestionKeyStatus {
+  deviceId: string;
+  externalId: string;
+  deviceKey: string;
+}
 
 export interface OperationsSummary {
   sites: number;
@@ -93,7 +102,6 @@ export interface OperationsOverview {
   recentEvents: ConnectivityEvent[];
 }
 
-
 export interface DeviceConnectivityEventsResponse {
   device: {
     id: string;
@@ -110,7 +118,7 @@ export interface DeviceAlert {
   id: string;
   deviceId: string;
   type: string;
-  status: 'OPEN' | 'RESOLVED';
+  status: "OPEN" | "RESOLVED";
   severity: AlertSeverity;
   title: string;
   message: string;
@@ -133,15 +141,14 @@ export interface DeviceAlert {
   };
 }
 
-
 export type DeviceType =
-  | 'CAMERA'
-  | 'RECORDER'
-  | 'GATEWAY'
-  | 'ACCESS_CONTROLLER'
-  | 'SENSOR'
-  | 'INTERCOM'
-  | 'NETWORK_SWITCH';
+  | "CAMERA"
+  | "RECORDER"
+  | "GATEWAY"
+  | "ACCESS_CONTROLLER"
+  | "SENSOR"
+  | "INTERCOM"
+  | "NETWORK_SWITCH";
 
 export interface Site {
   id: string;
@@ -179,7 +186,7 @@ export interface CreateSiteInput {
   code: string;
   timezone?: string;
   address?: string;
-  status?: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'ARCHIVED';
+  status?: "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "ARCHIVED";
 }
 
 export interface CreateDeviceInput {
@@ -192,6 +199,6 @@ export interface CreateDeviceInput {
   firmwareVersion?: string;
   ipAddress?: string;
   serialNumber?: string;
-  status?: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'DECOMMISSIONED';
+  status?: "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "DECOMMISSIONED";
   expectedHeartbeatInterval?: number;
 }
