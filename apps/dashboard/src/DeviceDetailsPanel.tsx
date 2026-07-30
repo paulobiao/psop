@@ -11,13 +11,8 @@ import {
   Thermometer,
   Wifi,
   X,
-} from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getDeviceAlerts,
   evaluateFleetConnectivity,
@@ -25,14 +20,15 @@ import {
   getDeviceTelemetry,
   getTelemetryDemoStatus,
   setDeviceDemoState,
-} from './api';
+} from "./api";
+import DeviceIngestionPanel from "./DeviceIngestionPanel";
 import type {
   ConnectivityEvent,
   ConnectivityState,
   DeviceAlert,
   FleetDevice,
   TelemetryDemoState,
-} from './types';
+} from "./types";
 
 interface DeviceDetailsPanelProps {
   deviceId: string;
@@ -42,22 +38,22 @@ interface DeviceDetailsPanelProps {
 
 function formatDate(value: string | null): string {
   if (!value) {
-    return 'Never';
+    return "Never";
   }
 
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   }).format(new Date(value));
 }
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) {
-    return 'No heartbeat';
+    return "No heartbeat";
   }
 
   if (seconds < 60) {
@@ -65,44 +61,29 @@ function formatDuration(seconds: number | null): string {
   }
 
   if (seconds < 3600) {
-    const minutes =
-      Math.floor(seconds / 60);
+    const minutes = Math.floor(seconds / 60);
 
-    return `${minutes} ${
-      minutes === 1
-        ? 'minute'
-        : 'minutes'
-    }`;
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
   }
 
   if (seconds < 86400) {
-    const hours =
-      Math.floor(seconds / 3600);
+    const hours = Math.floor(seconds / 3600);
 
-    return `${hours} ${
-      hours === 1
-        ? 'hour'
-        : 'hours'
-    }`;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
   }
 
-  const days =
-    Math.floor(seconds / 86400);
+  const days = Math.floor(seconds / 86400);
 
-  return `${days} ${
-    days === 1
-      ? 'day'
-      : 'days'
-  }`;
+  return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
 function stateLabel(state: ConnectivityState): string {
   const labels: Record<ConnectivityState, string> = {
-    ONLINE: 'Online',
-    DEGRADED: 'Degraded',
-    OFFLINE: 'Offline',
-    NEVER_SEEN: 'Never seen',
-    UNKNOWN: 'Unknown',
+    ONLINE: "Online",
+    DEGRADED: "Degraded",
+    OFFLINE: "Offline",
+    NEVER_SEEN: "Never seen",
+    UNKNOWN: "Unknown",
   };
 
   return labels[state];
@@ -128,11 +109,7 @@ function DetailMetric({
   );
 }
 
-function EventEntry({
-  event,
-}: {
-  event: ConnectivityEvent;
-}) {
+function EventEntry({ event }: { event: ConnectivityEvent }) {
   return (
     <article className="details-event">
       <span
@@ -146,14 +123,10 @@ function EventEntry({
               ? `${stateLabel(event.previous_state)} → ${stateLabel(
                   event.current_state,
                 )}`
-              : `Initial state: ${stateLabel(
-                  event.current_state,
-                )}`}
+              : `Initial state: ${stateLabel(event.current_state)}`}
           </strong>
 
-          <span
-            className={`badge badge--${event.current_state.toLowerCase()}`}
-          >
+          <span className={`badge badge--${event.current_state.toLowerCase()}`}>
             {stateLabel(event.current_state)}
           </span>
         </div>
@@ -189,7 +162,7 @@ function AlertEntry({ alert }: { alert: DeviceAlert }) {
           Opened {formatDate(alert.openedAt)}
           {alert.resolvedAt
             ? ` · Resolved ${formatDate(alert.resolvedAt)}`
-            : ''}
+            : ""}
         </small>
       </div>
     </article>
@@ -201,18 +174,16 @@ export default function DeviceDetailsPanel({
   onClose,
   onChanged,
 }: DeviceDetailsPanelProps) {
-  const [telemetry, setTelemetry] =
-    useState<FleetDevice | null>(null);
-  const [events, setEvents] = useState<
-    ConnectivityEvent[]
-  >([]);
+  const [telemetry, setTelemetry] = useState<FleetDevice | null>(null);
+  const [events, setEvents] = useState<ConnectivityEvent[]>([]);
   const [alerts, setAlerts] = useState<DeviceAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoEnabled, setDemoEnabled] = useState(false);
-  const [demoChanging, setDemoChanging] =
-    useState<TelemetryDemoState | null>(null);
+  const [demoChanging, setDemoChanging] = useState<TelemetryDemoState | null>(
+    null,
+  );
 
   const loadDetails = useCallback(
     async (silent = false) => {
@@ -225,30 +196,16 @@ export default function DeviceDetailsPanel({
       }
 
       try {
-        const [
-          telemetryResult,
-          eventsResult,
-          alertsResult,
-          demoStatus,
-        ] = await Promise.all([
-          getDeviceTelemetry(
-            deviceId,
-            controller.signal,
-          ),
-          getDeviceConnectivityEvents(
-            deviceId,
-            controller.signal,
-          ),
-          getDeviceAlerts(deviceId, controller.signal),
-          getTelemetryDemoStatus(
-            controller.signal,
-          ),
-        ]);
+        const [telemetryResult, eventsResult, alertsResult, demoStatus] =
+          await Promise.all([
+            getDeviceTelemetry(deviceId, controller.signal),
+            getDeviceConnectivityEvents(deviceId, controller.signal),
+            getDeviceAlerts(deviceId, controller.signal),
+            getTelemetryDemoStatus(controller.signal),
+          ]);
 
         setTelemetry(telemetryResult);
-        setDemoEnabled(
-          demoStatus.enabled,
-        );
+        setDemoEnabled(demoStatus.enabled);
         setEvents(eventsResult.events);
         setAlerts(alertsResult);
         setError(null);
@@ -256,7 +213,7 @@ export default function DeviceDetailsPanel({
         setError(
           requestError instanceof Error
             ? requestError.message
-            : 'Unable to load device details',
+            : "Unable to load device details",
         );
       } finally {
         setLoading(false);
@@ -274,37 +231,27 @@ export default function DeviceDetailsPanel({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         onClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
 
-    return () =>
-      window.removeEventListener(
-        'keydown',
-        handleKeyDown,
-      );
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
   const activeAlerts = useMemo(
-    () => alerts.filter((alert) => alert.status === 'OPEN'),
+    () => alerts.filter((alert) => alert.status === "OPEN"),
     [alerts],
   );
 
-
-  async function applyDemoState(
-    state: TelemetryDemoState,
-  ) {
+  async function applyDemoState(state: TelemetryDemoState) {
     setDemoChanging(state);
     setError(null);
 
     try {
-      await setDeviceDemoState(
-        deviceId,
-        state,
-      );
+      await setDeviceDemoState(deviceId, state);
 
       await evaluateFleetConnectivity();
       await loadDetails(true);
@@ -313,7 +260,7 @@ export default function DeviceDetailsPanel({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Unable to apply demo state',
+          : "Unable to apply demo state",
       );
     } finally {
       setDemoChanging(null);
@@ -338,18 +285,12 @@ export default function DeviceDetailsPanel({
       >
         <header className="device-details__header">
           <div>
-            <span className="eyebrow">
-              Camera intelligence
-            </span>
-            <h2>
-              {telemetry?.device.name ??
-                'Device details'}
-            </h2>
+            <span className="eyebrow">Camera intelligence</span>
+            <h2>{telemetry?.device.name ?? "Device details"}</h2>
 
             {telemetry && (
               <p>
-                {telemetry.device.siteName} ·{' '}
-                {telemetry.device.externalId}
+                {telemetry.device.siteName} · {telemetry.device.externalId}
               </p>
             )}
           </div>
@@ -364,7 +305,7 @@ export default function DeviceDetailsPanel({
             >
               <RefreshCw
                 size={18}
-                className={refreshing ? 'spin' : undefined}
+                className={refreshing ? "spin" : undefined}
               />
             </button>
 
@@ -398,50 +339,41 @@ export default function DeviceDetailsPanel({
             {demoEnabled && (
               <section className="demo-lab">
                 <div>
-                  <span className="eyebrow">
-                    Local simulation
-                  </span>
+                  <span className="eyebrow">Local simulation</span>
                   <h3>Telemetry Demo Lab</h3>
                   <p>
-                    Apply a controlled camera state without
-                    calling AWS services.
+                    Apply a controlled camera state without calling AWS
+                    services.
                   </p>
                 </div>
 
                 <div className="demo-lab__actions">
                   {(
                     [
-                      'ONLINE',
-                      'DEGRADED',
-                      'OFFLINE',
-                      'NEVER_SEEN',
-                      'UNKNOWN',
+                      "ONLINE",
+                      "DEGRADED",
+                      "OFFLINE",
+                      "NEVER_SEEN",
+                      "UNKNOWN",
                     ] as TelemetryDemoState[]
                   ).map((state) => (
                     <button
                       key={state}
                       type="button"
                       className={`demo-state-button demo-state-button--${state.toLowerCase()}`}
-                      disabled={
-                        demoChanging !== null
-                      }
-                      onClick={() =>
-                        void applyDemoState(
-                          state,
-                        )
-                      }
+                      disabled={demoChanging !== null}
+                      onClick={() => void applyDemoState(state)}
                     >
                       {demoChanging === state
-                        ? 'Applying…'
-                        : state.replace(
-                            '_',
-                            ' ',
-                          )}
+                        ? "Applying…"
+                        : state.replace("_", " ")}
                     </button>
                   ))}
                 </div>
               </section>
             )}
+
+            <DeviceIngestionPanel deviceId={deviceId} />
 
             <section className="connection-hero">
               <div
@@ -452,28 +384,19 @@ export default function DeviceDetailsPanel({
 
               <div>
                 <span>Connectivity</span>
-                <strong>
-                  {stateLabel(
-                    telemetry.connectivity.state,
-                  )}
-                </strong>
+                <strong>{stateLabel(telemetry.connectivity.state)}</strong>
                 <small>
-                  Last heartbeat{' '}
-                  {formatDate(
-                    telemetry.connectivity
-                      .lastHeartbeatAt,
-                  )}
+                  Last heartbeat{" "}
+                  {formatDate(telemetry.connectivity.lastHeartbeatAt)}
                 </small>
 
                 {telemetry.connectivity.reasons.length > 0 && (
                   <small className="health-reasons">
                     {telemetry.connectivity.reasons
                       .map((reason) =>
-                        reason
-                          .toLowerCase()
-                          .replaceAll('_', ' '),
+                        reason.toLowerCase().replaceAll("_", " "),
                       )
-                      .join(' · ')}
+                      .join(" · ")}
                   </small>
                 )}
               </div>
@@ -481,18 +404,14 @@ export default function DeviceDetailsPanel({
               <span
                 className={`badge badge--${telemetry.connectivity.state.toLowerCase()}`}
               >
-                {stateLabel(
-                  telemetry.connectivity.state,
-                )}
+                {stateLabel(telemetry.connectivity.state)}
               </span>
             </section>
 
             <section className="details-section">
               <div className="details-section__heading">
                 <div>
-                  <span className="eyebrow">
-                    Live telemetry
-                  </span>
+                  <span className="eyebrow">Live telemetry</span>
                   <h3>Camera health</h3>
                 </div>
                 <Gauge size={19} />
@@ -502,14 +421,10 @@ export default function DeviceDetailsPanel({
                 <DetailMetric
                   label="Temperature"
                   value={
-                    telemetry.telemetry?.temperatureC ===
-                      null ||
-                    telemetry.telemetry?.temperatureC ===
-                      undefined
-                      ? '—'
-                      : `${telemetry.telemetry.temperatureC.toFixed(
-                          1,
-                        )}°C`
+                    telemetry.telemetry?.temperatureC === null ||
+                    telemetry.telemetry?.temperatureC === undefined
+                      ? "—"
+                      : `${telemetry.telemetry.temperatureC.toFixed(1)}°C`
                   }
                   icon={<Thermometer size={19} />}
                 />
@@ -517,14 +432,10 @@ export default function DeviceDetailsPanel({
                 <DetailMetric
                   label="Storage used"
                   value={
-                    telemetry.telemetry?.storageUsedPct ===
-                      null ||
-                    telemetry.telemetry?.storageUsedPct ===
-                      undefined
-                      ? '—'
-                      : `${telemetry.telemetry.storageUsedPct.toFixed(
-                          1,
-                        )}%`
+                    telemetry.telemetry?.storageUsedPct === null ||
+                    telemetry.telemetry?.storageUsedPct === undefined
+                      ? "—"
+                      : `${telemetry.telemetry.storageUsedPct.toFixed(1)}%`
                   }
                   icon={<HardDrive size={19} />}
                 />
@@ -532,11 +443,9 @@ export default function DeviceDetailsPanel({
                 <DetailMetric
                   label="Bitrate"
                   value={
-                    telemetry.telemetry?.bitrateKbps ===
-                      null ||
-                    telemetry.telemetry?.bitrateKbps ===
-                      undefined
-                      ? '—'
+                    telemetry.telemetry?.bitrateKbps === null ||
+                    telemetry.telemetry?.bitrateKbps === undefined
+                      ? "—"
                       : `${telemetry.telemetry.bitrateKbps} kbps`
                   }
                   icon={<Activity size={19} />}
@@ -544,25 +453,19 @@ export default function DeviceDetailsPanel({
 
                 <DetailMetric
                   label="Heartbeat age"
-                  value={formatDuration(
-                    telemetry.connectivity.ageSeconds,
-                  )}
+                  value={formatDuration(telemetry.connectivity.ageSeconds)}
                   icon={<Clock3 size={19} />}
                 />
 
                 <DetailMetric
                   label="Firmware"
-                  value={
-                    telemetry.telemetry?.firmware ?? '—'
-                  }
+                  value={telemetry.telemetry?.firmware ?? "—"}
                   icon={<Cpu size={19} />}
                 />
 
                 <DetailMetric
                   label="Model"
-                  value={
-                    telemetry.telemetry?.model ?? '—'
-                  }
+                  value={telemetry.telemetry?.model ?? "—"}
                   icon={<Camera size={19} />}
                 />
               </div>
@@ -571,9 +474,7 @@ export default function DeviceDetailsPanel({
             <section className="details-section">
               <div className="details-section__heading">
                 <div>
-                  <span className="eyebrow">
-                    Incident history
-                  </span>
+                  <span className="eyebrow">Incident history</span>
                   <h3>Alerts</h3>
                 </div>
 
@@ -584,20 +485,14 @@ export default function DeviceDetailsPanel({
 
               <div className="details-list">
                 {alerts.slice(0, 10).map((alert) => (
-                  <AlertEntry
-                    key={alert.id}
-                    alert={alert}
-                  />
+                  <AlertEntry key={alert.id} alert={alert} />
                 ))}
 
                 {alerts.length === 0 && (
                   <div className="details-empty">
                     <Database size={23} />
                     <strong>No alert history</strong>
-                    <span>
-                      Alerts for this camera will appear
-                      here.
-                    </span>
+                    <span>Alerts for this camera will appear here.</span>
                   </div>
                 )}
               </div>
@@ -606,15 +501,11 @@ export default function DeviceDetailsPanel({
             <section className="details-section">
               <div className="details-section__heading">
                 <div>
-                  <span className="eyebrow">
-                    Connectivity timeline
-                  </span>
+                  <span className="eyebrow">Connectivity timeline</span>
                   <h3>Recent state changes</h3>
                 </div>
 
-                <span className="panel__count">
-                  {events.length} events
-                </span>
+                <span className="panel__count">{events.length} events</span>
               </div>
 
               <div className="details-list">
@@ -629,9 +520,7 @@ export default function DeviceDetailsPanel({
                   <div className="details-empty">
                     <Clock3 size={23} />
                     <strong>No connectivity events</strong>
-                    <span>
-                      State changes will appear here.
-                    </span>
+                    <span>State changes will appear here.</span>
                   </div>
                 )}
               </div>

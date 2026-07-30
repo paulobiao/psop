@@ -5,27 +5,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
-import type {
-  IngestDeviceTelemetryDto,
-} from '../dto/ingest-device-telemetry.dto.js';
-import {
-  DeviceRepository,
-} from '../repositories/device.repository.js';
+import type { IngestDeviceTelemetryDto } from '../dto/ingest-device-telemetry.dto.js';
+import { DeviceRepository } from '../repositories/device.repository.js';
 import {
   deviceIngestionKeyPrefix,
   generateDeviceIngestionKey,
   hashDeviceIngestionKey,
   verifyDeviceIngestionKey,
 } from '../security/device-ingestion-key.js';
-import {
-  DeviceConnectivityEventsService,
-} from './device-connectivity-events.service.js';
-import {
-  DeviceTelemetryService,
-} from './device-telemetry.service.js';
-import {
-  LocalTelemetryService,
-} from './local-telemetry.service.js';
+import { DeviceConnectivityEventsService } from './device-connectivity-events.service.js';
+import { DeviceTelemetryService } from './device-telemetry.service.js';
+import { LocalTelemetryService } from './local-telemetry.service.js';
 
 @Injectable()
 export class DeviceTelemetryIngestionService {
@@ -33,22 +23,51 @@ export class DeviceTelemetryIngestionService {
     private readonly prisma: PrismaService,
     private readonly deviceRepository: DeviceRepository,
     private readonly localTelemetry: LocalTelemetryService,
-    private readonly connectivityEvents:
-      DeviceConnectivityEventsService,
+    private readonly connectivityEvents: DeviceConnectivityEventsService,
     private readonly telemetry: DeviceTelemetryService,
   ) {}
 
-  async rotateKey(
-    organizationId: string,
-    deviceId: string,
-  ) {
+  async getKeyStatus(organizationId: string, deviceId: string) {
+    const device = await this.deviceRepository.findByIdWithSite(
+      deviceId,
+      organizationId,
+    );
+
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    if (device.deviceType !== 'CAMERA') {
+      throw new BadRequestException(
+        'Ingestion credentials are available only for camera devices',
+      );
+    }
+
+    const credential = await this.prisma.deviceIngestionCredential.findUnique({
+      where: {
+        deviceId,
+      },
+      select: {
+        keyPrefix: true,
+        rotatedAt: true,
+      },
+    });
+
+    return {
+      enabled: this.localTelemetry.isEnabled(),
+      configured: Boolean(credential),
+      keyPrefix: credential?.keyPrefix ?? null,
+      rotatedAt: credential?.rotatedAt.toISOString() ?? null,
+    };
+  }
+
+  async rotateKey(organizationId: string, deviceId: string) {
     this.localTelemetry.assertEnabled();
 
-    const device =
-      await this.deviceRepository.findByIdWithSite(
-        deviceId,
-        organizationId,
-      );
+    const device = await this.deviceRepository.findByIdWithSite(
+      deviceId,
+      organizationId,
+    );
 
     if (!device) {
       throw new NotFoundException('Device not found');
@@ -62,8 +81,7 @@ export class DeviceTelemetryIngestionService {
 
     const deviceKey = generateDeviceIngestionKey();
     const rotatedAt = new Date();
-    const keyPrefix =
-      deviceIngestionKeyPrefix(deviceKey);
+    const keyPrefix = deviceIngestionKeyPrefix(deviceKey);
 
     await this.prisma.deviceIngestionCredential.upsert({
       where: { deviceId },
@@ -81,6 +99,8 @@ export class DeviceTelemetryIngestionService {
     });
 
     return {
+      enabled: this.localTelemetry.isEnabled(),
+      configured: true,
       deviceId,
       externalId: device.externalId,
       deviceKey,
@@ -121,28 +141,15 @@ export class DeviceTelemetryIngestionService {
       device.deviceType !== 'CAMERA' ||
       device.status !== 'ACTIVE' ||
       !device.ingestionCredential ||
-      !verifyDeviceIngestionKey(
-        deviceKey,
-        device.ingestionCredential.keyHash,
-      )
+      !verifyDeviceIngestionKey(deviceKey, device.ingestionCredential.keyHash)
     ) {
-      throw new UnauthorizedException(
-        'Invalid device credentials',
-      );
+      throw new UnauthorizedException('Invalid device credentials');
     }
 
-    await this.localTelemetry.upsertSnapshot(
-      device.id,
-      input,
-    );
+    await this.localTelemetry.upsertSnapshot(device.id, input);
 
-    await this.connectivityEvents.evaluateFleet(
-      device.site.organizationId,
-    );
+    await this.connectivityEvents.evaluateFleet(device.site.organizationId);
 
-    return this.telemetry.findByDeviceId(
-      device.id,
-      device.site.organizationId,
-    );
+    return this.telemetry.findByDeviceId(device.id, device.site.organizationId);
   }
 }

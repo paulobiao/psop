@@ -1,7 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap");
 
 :root {
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
   color: #e6edf7;
   background: #09101d;
   font-synthesis: none;
@@ -92,7 +92,7 @@ button {
 }
 
 .brand strong {
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 18px;
   letter-spacing: 0.04em;
 }
@@ -172,7 +172,7 @@ main {
 .page-heading h1,
 .panel h2 {
   margin: 0;
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   color: var(--text-strong);
 }
 
@@ -221,11 +221,9 @@ main {
   padding: 22px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.025),
-    transparent
-  ), var(--surface);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.025), transparent),
+    var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -250,7 +248,7 @@ main {
 .summary-card strong {
   display: block;
   margin-top: 18px;
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   color: var(--text-strong);
   font-size: 34px;
 }
@@ -668,7 +666,6 @@ tbody tr:hover {
   }
 }
 
-
 .fleet-row {
   cursor: pointer;
   outline: none;
@@ -720,7 +717,7 @@ tbody tr:hover {
 
 .device-details__header h2 {
   margin: 0;
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   color: var(--text-strong);
   font-size: 23px;
 }
@@ -811,7 +808,7 @@ tbody tr:hover {
 .connection-hero strong {
   margin: 3px 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 19px;
 }
 
@@ -839,7 +836,7 @@ tbody tr:hover {
 .details-section__heading h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 16px;
 }
 
@@ -1060,7 +1057,6 @@ tbody tr:hover {
   }
 }
 
-
 .inventory-overlay {
   position: fixed;
   inset: 0;
@@ -1099,7 +1095,7 @@ tbody tr:hover {
 .inventory-header h2 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 25px;
 }
 
@@ -1143,7 +1139,7 @@ tbody tr:hover {
 .inventory-section__heading h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 17px;
 }
 
@@ -1203,7 +1199,10 @@ tbody tr:hover {
 
 .inventory-device {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1.2fr) minmax(150px, 0.8fr) auto auto;
+  grid-template-columns: auto minmax(180px, 1.2fr) minmax(
+      150px,
+      0.8fr
+    ) auto auto;
   align-items: center;
   gap: 14px;
   padding: 15px 0;
@@ -1424,7 +1423,6 @@ tbody tr:hover {
   }
 }
 
-
 .inventory-site-card {
   position: relative;
 }
@@ -1519,7 +1517,7 @@ tbody tr:hover {
 .inventory-edit-header h2 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 20px;
 }
 
@@ -1594,7 +1592,6 @@ tbody tr:hover {
   }
 }
 
-
 .alert-management-overlay {
   position: fixed;
   inset: 0;
@@ -1650,7 +1647,7 @@ tbody tr:hover {
 .alert-management-header h2 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 25px;
 }
 
@@ -1752,7 +1749,7 @@ tbody tr:hover {
 .alert-management-summary strong {
   margin-top: 7px;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 20px;
 }
 
@@ -1959,7 +1956,6 @@ tbody tr:hover {
   }
 }
 
-
 .fleet-toolbar {
   display: flex;
   align-items: center;
@@ -2071,7 +2067,6 @@ tbody tr:hover {
   }
 }
 
-
 .site-details-overlay {
   position: fixed;
   inset: 0;
@@ -2126,7 +2121,7 @@ tbody tr:hover {
 .site-details-header h2 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 25px;
 }
 
@@ -2246,7 +2241,7 @@ tbody tr:hover {
 .site-profile h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 22px;
 }
 
@@ -2304,7 +2299,7 @@ tbody tr:hover {
 .site-summary-grid strong {
   margin-top: 7px;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 22px;
 }
 
@@ -2339,7 +2334,7 @@ tbody tr:hover {
 .site-panel__heading h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 17px;
 }
 
@@ -2510,7 +2505,6 @@ tbody tr:hover {
   }
 }
 
-
 .auth-page,
 .auth-loading {
   min-height: 100vh;
@@ -2582,7 +2576,7 @@ tbody tr:hover {
 
 .auth-brand strong {
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 17px;
 }
 
@@ -2600,7 +2594,7 @@ tbody tr:hover {
 .auth-heading h1 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 29px;
   letter-spacing: -0.03em;
 }
@@ -2674,11 +2668,7 @@ tbody tr:hover {
   border-radius: 11px;
   color: #f8fbff;
   font-weight: 800;
-  background: linear-gradient(
-    135deg,
-    #1f78d1,
-    #2456b7
-  );
+  background: linear-gradient(135deg, #1f78d1, #2456b7);
   box-shadow: 0 12px 30px rgba(31, 120, 209, 0.2);
 }
 
@@ -2767,7 +2757,6 @@ tbody tr:hover {
   }
 }
 
-
 .user-management-overlay {
   position: fixed;
   inset: 0;
@@ -2825,7 +2814,7 @@ tbody tr:hover {
 .user-password-panel h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
 }
 
 .user-management-header h2 {
@@ -2868,7 +2857,7 @@ tbody tr:hover {
 .user-management-summary strong {
   margin-top: 5px;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 21px;
 }
 
@@ -3222,7 +3211,6 @@ tbody tr:hover {
   }
 }
 
-
 .audit-log-modal {
   width: min(1320px, 100%);
   max-height: calc(100vh - 56px);
@@ -3262,7 +3250,7 @@ tbody tr:hover {
 .audit-details-heading h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
 }
 
 .audit-log-title h2 {
@@ -3519,7 +3507,6 @@ tbody tr:hover {
   }
 }
 
-
 .session-management-modal {
   width: min(1260px, 100%);
   max-height: calc(100vh - 56px);
@@ -3559,7 +3546,7 @@ tbody tr:hover {
 .session-details-heading h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
 }
 
 .session-management-title h2 {
@@ -3601,7 +3588,7 @@ tbody tr:hover {
 .session-summary strong {
   margin-top: 5px;
   color: var(--text-strong);
-  font-family: 'Manrope', sans-serif;
+  font-family: "Manrope", sans-serif;
   font-size: 21px;
 }
 
@@ -3868,9 +3855,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: 20px;
   background: #0d1727;
-  box-shadow:
-    0 30px 100px
-    rgba(0, 0, 0, 0.5);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
 }
 
 .security-settings-header {
@@ -3882,10 +3867,8 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 20px;
   padding: 23px 25px;
-  border-bottom:
-    1px solid var(--border);
-  background:
-    rgba(13, 23, 39, 0.97);
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 23, 39, 0.97);
   backdrop-filter: blur(18px);
 }
 
@@ -3911,9 +3894,7 @@ tbody tr:hover {
 .security-management-card h3 {
   margin: 0;
   color: var(--text-strong);
-  font-family:
-    'Manrope',
-    sans-serif;
+  font-family: "Manrope", sans-serif;
 }
 
 .security-settings-title h2 {
@@ -3939,14 +3920,12 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--muted);
-  background:
-    rgba(148, 163, 184, 0.05);
+  background: rgba(148, 163, 184, 0.05);
 }
 
 .security-close-button:hover {
   color: var(--text-strong);
-  border-color:
-    rgba(148, 163, 184, 0.35);
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 .security-message {
@@ -3960,18 +3939,14 @@ tbody tr:hover {
 
 .security-message--error {
   color: #fecaca;
-  border-color:
-    rgba(248, 113, 113, 0.3);
-  background:
-    rgba(127, 29, 29, 0.18);
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(127, 29, 29, 0.18);
 }
 
 .security-message--success {
   color: #bbf7d0;
-  border-color:
-    rgba(74, 222, 128, 0.28);
-  background:
-    rgba(20, 83, 45, 0.2);
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(20, 83, 45, 0.2);
 }
 
 .security-settings-content {
@@ -4011,14 +3986,12 @@ tbody tr:hover {
   place-items: center;
   border-radius: 14px;
   color: #fcd34d;
-  background:
-    rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .security-status-icon--enabled {
   color: #86efac;
-  background:
-    rgba(34, 197, 94, 0.1);
+  background: rgba(34, 197, 94, 0.1);
 }
 
 .security-status-copy h3,
@@ -4041,12 +4014,9 @@ tbody tr:hover {
   gap: 10px;
   margin-top: 17px;
   padding: 12px;
-  border:
-    1px solid
-    rgba(77, 163, 255, 0.28);
+  border: 1px solid rgba(77, 163, 255, 0.28);
   border-radius: 11px;
-  background:
-    rgba(4, 10, 20, 0.5);
+  background: rgba(4, 10, 20, 0.5);
 }
 
 .security-secret code {
@@ -4067,8 +4037,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
-  background:
-    rgba(148, 163, 184, 0.06);
+  background: rgba(148, 163, 184, 0.06);
 }
 
 .security-setup-details {
@@ -4083,8 +4052,7 @@ tbody tr:hover {
   border-radius: 999px;
   color: var(--muted);
   font-size: 9px;
-  background:
-    rgba(148, 163, 184, 0.07);
+  background: rgba(148, 163, 184, 0.07);
 }
 
 .security-enable-form {
@@ -4096,8 +4064,7 @@ tbody tr:hover {
   gap: 10px;
   margin-top: 18px;
   padding-top: 17px;
-  border-top:
-    1px solid var(--border);
+  border-top: 1px solid var(--border);
 }
 
 .security-enable-form label {
@@ -4121,17 +4088,13 @@ tbody tr:hover {
   outline: 0;
   color: var(--text-strong);
   font: inherit;
-  background:
-    rgba(4, 10, 20, 0.5);
+  background: rgba(4, 10, 20, 0.5);
 }
 
 .security-enable-form input:focus,
 .security-management-card input:focus {
-  border-color:
-    rgba(77, 163, 255, 0.6);
-  box-shadow:
-    0 0 0 3px
-    rgba(77, 163, 255, 0.09);
+  border-color: rgba(77, 163, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.09);
 }
 
 .security-primary-button,
@@ -4158,16 +4121,13 @@ tbody tr:hover {
 .security-secondary-button {
   color: var(--text-strong);
   border-color: var(--border);
-  background:
-    rgba(148, 163, 184, 0.07);
+  background: rgba(148, 163, 184, 0.07);
 }
 
 .security-danger-button {
   color: #fee2e2;
-  border-color:
-    rgba(248, 113, 113, 0.38);
-  background:
-    rgba(127, 29, 29, 0.22);
+  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(127, 29, 29, 0.22);
 }
 
 .security-primary-button:disabled,
@@ -4179,11 +4139,7 @@ tbody tr:hover {
 
 .security-code-grid {
   display: grid;
-  grid-template-columns:
-    repeat(
-      2,
-      minmax(0, 1fr)
-    );
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 17px 0;
 }
@@ -4195,22 +4151,16 @@ tbody tr:hover {
   color: #dbeafe;
   text-align: center;
   letter-spacing: 0.12em;
-  background:
-    rgba(4, 10, 20, 0.5);
+  background: rgba(4, 10, 20, 0.5);
 }
 
-.security-recovery-card
-.security-secondary-button {
+.security-recovery-card .security-secondary-button {
   width: 100%;
 }
 
 .security-actions-grid {
   display: grid;
-  grid-template-columns:
-    repeat(
-      2,
-      minmax(0, 1fr)
-    );
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 15px;
 }
 
@@ -4225,12 +4175,10 @@ tbody tr:hover {
 }
 
 .security-management-card--danger {
-  border-color:
-    rgba(248, 113, 113, 0.23);
+  border-color: rgba(248, 113, 113, 0.23);
 }
 
-.security-management-card--danger
-> svg {
+.security-management-card--danger > svg {
   color: #fca5a5;
 }
 
@@ -4352,4 +4300,245 @@ tbody tr:hover {
 .demo-state-button--never_seen,
 .demo-state-button--unknown {
   color: #cbd5e1;
+}
+
+.ingestion-management__body {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+}
+
+.ingestion-management__loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ingestion-management__status {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.ingestion-management__status p {
+  max-width: 350px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.credential-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.credential-state--configured {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.credential-state--missing {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.credential-primary,
+.credential-secret__actions button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(77, 163, 255, 0.34);
+  border-radius: 10px;
+  color: #dcebff;
+  background: rgba(77, 163, 255, 0.12);
+  font-weight: 750;
+}
+
+.credential-primary {
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.credential-primary:hover,
+.credential-secret__actions button:hover {
+  background: rgba(77, 163, 255, 0.2);
+}
+
+.credential-primary:disabled,
+.credential-secret__actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.credential-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.credential-metadata > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 13px 14px;
+}
+
+.credential-metadata > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.credential-metadata small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.credential-metadata strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credential-notice,
+.credential-error {
+  padding: 12px 13px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.credential-notice {
+  border: 1px solid rgba(245, 181, 74, 0.2);
+  color: #d9c28e;
+  background: rgba(245, 181, 74, 0.07);
+}
+
+.credential-error {
+  border: 1px solid rgba(255, 91, 111, 0.28);
+  color: #ffb8c1;
+  background: rgba(255, 91, 111, 0.08);
+}
+
+.credential-secret {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(77, 163, 255, 0.34);
+  border-radius: 13px;
+  background: rgba(77, 163, 255, 0.065);
+}
+
+.credential-secret__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.credential-secret__heading strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.credential-secret p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.credential-secret__value {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: #dcebff;
+  background: rgba(2, 8, 18, 0.54);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  user-select: all;
+}
+
+.credential-secret__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.credential-secret__actions button {
+  padding: 0 12px;
+}
+
+.credential-icon-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-light);
+}
+
+.credential-icon-button:hover {
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
+.credential-secret__hint {
+  color: #7d8da4;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .ingestion-management__status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .credential-primary {
+    width: 100%;
+  }
+
+  .credential-metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-metadata > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .credential-secret__actions {
+    flex-direction: column;
+  }
+
+  .credential-secret__actions button {
+    width: 100%;
+  }
 }
