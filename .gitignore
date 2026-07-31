@@ -22,3 +22,8 @@ __pycache__/
 
 apps/simulator/certs/
 apps/simulator/.venv/
+
+# PSOP Edge Gateway local configuration and state
+apps/gateway/gateway.local.json
+apps/gateway/.env.local
+apps/gateway/state/
