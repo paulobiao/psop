@@ -49,6 +49,12 @@ enum DeviceStatus {
   DECOMMISSIONED
 }
 
+enum DeviceMonitoringMode {
+  DIRECT
+  VIA_GATEWAY
+  INVENTORY_ONLY
+}
+
 model Organization {
   id             String             @id @default(uuid()) @db.Uuid
   name           String
@@ -113,22 +119,26 @@ model Site {
 }
 
 model Device {
-  id                        String       @id @default(uuid()) @db.Uuid
-  siteId                    String       @map("site_id") @db.Uuid
-  site                      Site         @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  id                        String                     @id @default(uuid()) @db.Uuid
+  siteId                    String                     @map("site_id") @db.Uuid
+  site                      Site                       @relation(fields: [siteId], references: [id], onDelete: Restrict)
   name                      String
-  externalId                String       @map("external_id")
-  deviceType                DeviceType   @map("device_type")
+  externalId                String                     @map("external_id")
+  deviceType                DeviceType                 @map("device_type")
+  monitoringMode            DeviceMonitoringMode       @default(DIRECT) @map("monitoring_mode")
+  gatewayDeviceId           String?                    @map("gateway_device_id") @db.Uuid
+  gatewayDevice             Device?                    @relation("DeviceGateway", fields: [gatewayDeviceId], references: [id], onDelete: Restrict)
+  managedDevices            Device[]                   @relation("DeviceGateway")
   manufacturer              String?
   model                     String?
-  firmwareVersion           String?      @map("firmware_version")
-  ipAddress                 String?      @map("ip_address")
-  serialNumber              String?      @map("serial_number")
-  status                    DeviceStatus @default(ACTIVE)
-  expectedHeartbeatInterval Int          @default(60) @map("expected_heartbeat_interval")
-  createdAt                 DateTime     @default(now()) @map("created_at")
-  updatedAt                 DateTime     @updatedAt @map("updated_at")
-  deletedAt                 DateTime?    @map("deleted_at")
+  firmwareVersion           String?                    @map("firmware_version")
+  ipAddress                 String?                    @map("ip_address")
+  serialNumber              String?                    @map("serial_number")
+  status                    DeviceStatus               @default(ACTIVE)
+  expectedHeartbeatInterval Int                        @default(60) @map("expected_heartbeat_interval")
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+  deletedAt                 DateTime?                  @map("deleted_at")
   alerts                    Alert[]
   ingestionCredential       DeviceIngestionCredential?
   telemetrySnapshot         DeviceTelemetrySnapshot?
@@ -137,6 +147,8 @@ model Device {
   @@unique([siteId, externalId])
   @@index([siteId])
   @@index([deviceType])
+  @@index([monitoringMode])
+  @@index([gatewayDeviceId])
   @@map("devices")
 }
 
@@ -162,10 +174,10 @@ model DeviceTelemetrySnapshot {
   bitrateKbps    Int?     @map("bitrate_kbps")
   storageUsedPct Float?   @map("storage_used_pct")
   uptimeSeconds  Int?     @map("uptime_seconds")
-  model           String?
-  firmware        String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  model          String?
+  firmware       String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([observedAt])
   @@map("device_telemetry_snapshots")

@@ -40,6 +40,14 @@ export class CreateDeviceDto {
     | 'NETWORK_SWITCH';
 
   @IsOptional()
+  @IsIn(['DIRECT', 'VIA_GATEWAY', 'INVENTORY_ONLY'])
+  monitoringMode?: 'DIRECT' | 'VIA_GATEWAY' | 'INVENTORY_ONLY';
+
+  @IsOptional()
+  @IsUUID()
+  gatewayDeviceId?: string | null;
+
+  @IsOptional()
   @IsString()
   manufacturer?: string;
 

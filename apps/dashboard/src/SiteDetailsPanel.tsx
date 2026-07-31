@@ -163,6 +163,17 @@ export default function SiteDetailsPanel({
       );
   }, [onClose]);
 
+  const gatewayById = useMemo(
+    () =>
+      new Map(
+        devices.map((device) => [
+          device.id,
+          device,
+        ]),
+      ),
+    [devices],
+  );
+
   const selectedSite = useMemo(
     () =>
       sites.find((site) => site.id === selectedSiteId) ??
@@ -468,13 +479,30 @@ export default function SiteDetailsPanel({
                                 'Not specified'}
                             </strong>
                             <small>
-                              {device.ipAddress ||
-                                device.firmwareVersion ||
-                                'No network information'}
+                              {device.monitoringMode ===
+                                'VIA_GATEWAY'
+                                ? `Via ${
+                                    gatewayById.get(
+                                      device.gatewayDeviceId ??
+                                        '',
+                                    )?.name ??
+                                    'gateway'
+                                  }`
+                                : device.monitoringMode ===
+                                    'INVENTORY_ONLY'
+                                  ? 'Inventory only'
+                                  : device.ipAddress ||
+                                    device.firmwareVersion ||
+                                    'Direct monitoring'}
                             </small>
                           </div>
 
-                          {camera ? (
+                          {device.monitoringMode ===
+                          'VIA_GATEWAY' ? (
+                            <span className="inventory-status">
+                              VIA GATEWAY
+                            </span>
+                          ) : camera ? (
                             <span
                               className={`badge badge--${camera.connectivity.state.toLowerCase()}`}
                             >

@@ -1,8 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Device } from '../../../../generated/prisma/client.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceRepository } from '../repositories/device.repository';
+
+type MonitoringMode =
+  | 'DIRECT'
+  | 'VIA_GATEWAY'
+  | 'INVENTORY_ONLY';
 
 @Injectable()
 export class DeviceService {
@@ -41,7 +50,18 @@ export class DeviceService {
       organizationId,
     );
 
-    return this.deviceRepository.create(data);
+    const monitoring = await this.validateMonitoring({
+      organizationId,
+      siteId: data.siteId,
+      deviceId: null,
+      monitoringMode: data.monitoringMode ?? 'DIRECT',
+      gatewayDeviceId: data.gatewayDeviceId ?? null,
+    });
+
+    return this.deviceRepository.create({
+      ...data,
+      ...monitoring,
+    });
   }
 
   async update(
@@ -49,7 +69,12 @@ export class DeviceService {
     id: string,
     data: UpdateDeviceDto,
   ): Promise<Device> {
-    await this.findOne(organizationId, id);
+    const current = await this.findOne(
+      organizationId,
+      id,
+    );
+
+    const siteId = data.siteId ?? current.siteId;
 
     if (data.siteId) {
       await this.validateSite(
@@ -58,7 +83,45 @@ export class DeviceService {
       );
     }
 
-    return this.deviceRepository.update(id, data);
+    const managedDevices =
+      await this.deviceRepository.countManagedDevices(id);
+
+    if (
+      managedDevices > 0 &&
+      (
+        (data.siteId && data.siteId !== current.siteId) ||
+        (
+          data.deviceType &&
+          !['GATEWAY', 'RECORDER'].includes(data.deviceType)
+        ) ||
+        (
+          data.monitoringMode &&
+          data.monitoringMode !== 'DIRECT'
+        )
+      )
+    ) {
+      throw new BadRequestException(
+        'A gateway with assigned devices must remain a directly monitored gateway or recorder in the same site',
+      );
+    }
+
+    const monitoring = await this.validateMonitoring({
+      organizationId,
+      siteId,
+      deviceId: id,
+      monitoringMode:
+        data.monitoringMode ??
+        current.monitoringMode,
+      gatewayDeviceId:
+        data.gatewayDeviceId === undefined
+          ? current.gatewayDeviceId
+          : data.gatewayDeviceId,
+    });
+
+    return this.deviceRepository.update(id, {
+      ...data,
+      ...monitoring,
+    });
   }
 
   async remove(
@@ -67,7 +130,84 @@ export class DeviceService {
   ): Promise<Device> {
     await this.findOne(organizationId, id);
 
+    const managedDevices =
+      await this.deviceRepository.countManagedDevices(id);
+
+    if (managedDevices > 0) {
+      throw new BadRequestException(
+        'Remove or reassign devices connected to this gateway first',
+      );
+    }
+
     return this.deviceRepository.softDelete(id);
+  }
+
+  private async validateMonitoring(input: {
+    organizationId: string;
+    siteId: string;
+    deviceId: string | null;
+    monitoringMode: MonitoringMode;
+    gatewayDeviceId: string | null;
+  }): Promise<{
+    monitoringMode: MonitoringMode;
+    gatewayDeviceId: string | null;
+  }> {
+    if (input.monitoringMode !== 'VIA_GATEWAY') {
+      return {
+        monitoringMode: input.monitoringMode,
+        gatewayDeviceId: null,
+      };
+    }
+
+    if (!input.gatewayDeviceId) {
+      throw new BadRequestException(
+        'A gateway device is required for VIA_GATEWAY monitoring',
+      );
+    }
+
+    if (input.gatewayDeviceId === input.deviceId) {
+      throw new BadRequestException(
+        'A device cannot monitor itself',
+      );
+    }
+
+    const gateway = await this.deviceRepository.findById(
+      input.gatewayDeviceId,
+      input.organizationId,
+    );
+
+    if (!gateway) {
+      throw new NotFoundException(
+        'Gateway device not found',
+      );
+    }
+
+    if (
+      !['GATEWAY', 'RECORDER'].includes(
+        gateway.deviceType,
+      )
+    ) {
+      throw new BadRequestException(
+        'The selected monitoring device must be a gateway or recorder',
+      );
+    }
+
+    if (gateway.siteId !== input.siteId) {
+      throw new BadRequestException(
+        'The selected gateway must belong to the same site',
+      );
+    }
+
+    if (gateway.monitoringMode !== 'DIRECT') {
+      throw new BadRequestException(
+        'The selected gateway must use direct monitoring',
+      );
+    }
+
+    return {
+      monitoringMode: 'VIA_GATEWAY',
+      gatewayDeviceId: gateway.id,
+    };
   }
 
   private async validateSite(

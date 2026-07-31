@@ -119,6 +119,8 @@ export default function InventoryPanel({
       name: '',
       externalId: '',
       deviceType: 'CAMERA',
+      monitoringMode: 'DIRECT',
+      gatewayDeviceId: null,
       manufacturer: '',
       model: '',
       firmwareVersion: '',
@@ -177,6 +179,33 @@ export default function InventoryPanel({
         handleKeyDown,
       );
   }, [onClose]);
+
+  const gatewayById = useMemo(
+    () =>
+      new Map(
+        devices
+          .filter((device) =>
+            ['GATEWAY', 'RECORDER'].includes(
+              device.deviceType,
+            ),
+          )
+          .map((device) => [device.id, device]),
+      ),
+    [devices],
+  );
+
+  const gatewayCandidates = useMemo(
+    () =>
+      devices.filter(
+        (device) =>
+          device.siteId === deviceForm.siteId &&
+          device.monitoringMode === 'DIRECT' &&
+          ['GATEWAY', 'RECORDER'].includes(
+            device.deviceType,
+          ),
+      ),
+    [devices, deviceForm.siteId],
+  );
 
   const siteById = useMemo(
     () =>
@@ -251,6 +280,11 @@ export default function InventoryPanel({
         serialNumber:
           deviceForm.serialNumber?.trim() ||
           undefined,
+        gatewayDeviceId:
+          deviceForm.monitoringMode ===
+          'VIA_GATEWAY'
+            ? deviceForm.gatewayDeviceId || null
+            : null,
       });
 
       setDeviceForm((current) => ({
@@ -262,6 +296,8 @@ export default function InventoryPanel({
         firmwareVersion: '',
         ipAddress: '',
         serialNumber: '',
+        monitoringMode: 'DIRECT',
+        gatewayDeviceId: null,
       }));
 
       setSuccess(`Device ${device.name} created.`);
@@ -465,9 +501,19 @@ export default function InventoryPanel({
                             ?.name ?? 'Unknown site'}
                         </strong>
                         <small>
-                          {device.manufacturer ||
-                            device.model ||
-                            'No manufacturer'}
+                          {device.monitoringMode ===
+                            'VIA_GATEWAY'
+                            ? `Via ${
+                                gatewayById.get(
+                                  device.gatewayDeviceId ??
+                                    '',
+                                )?.name ??
+                                'gateway'
+                              }`
+                            : device.monitoringMode ===
+                                'INVENTORY_ONLY'
+                              ? 'Inventory only'
+                              : 'Direct monitoring'}
                         </small>
                       </div>
 
@@ -700,6 +746,76 @@ export default function InventoryPanel({
                   </select>
                 </label>
 
+                <label>
+                  Monitoring mode
+                  <select
+                    value={
+                      deviceForm.monitoringMode ??
+                      'DIRECT'
+                    }
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({
+                        ...current,
+                        monitoringMode:
+                          event.target.value as
+                            CreateDeviceInput['monitoringMode'],
+                        gatewayDeviceId:
+                          event.target.value ===
+                          'VIA_GATEWAY'
+                            ? current.gatewayDeviceId
+                            : null,
+                      }))
+                    }
+                  >
+                    <option value="DIRECT">
+                      Direct monitoring
+                    </option>
+                    <option value="VIA_GATEWAY">
+                      Monitored through gateway
+                    </option>
+                    <option value="INVENTORY_ONLY">
+                      Inventory only
+                    </option>
+                  </select>
+                </label>
+
+                {deviceForm.monitoringMode ===
+                  'VIA_GATEWAY' && (
+                  <label>
+                    Monitoring gateway
+                    <select
+                      required
+                      value={
+                        deviceForm.gatewayDeviceId ??
+                        ''
+                      }
+                      onChange={(event) =>
+                        setDeviceForm((current) => ({
+                          ...current,
+                          gatewayDeviceId:
+                            event.target.value ||
+                            null,
+                        }))
+                      }
+                    >
+                      <option value="">
+                        Select a gateway or recorder
+                      </option>
+                      {gatewayCandidates.map(
+                        (gateway) => (
+                          <option
+                            key={gateway.id}
+                            value={gateway.id}
+                          >
+                            {gateway.name} (
+                            {gateway.externalId})
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                )}
+
                 <div className="inventory-form__row">
                   <label>
                     Manufacturer
@@ -814,6 +930,7 @@ export default function InventoryPanel({
           site={editingSite ?? undefined}
           device={editingDevice ?? undefined}
           sites={sites}
+          devices={devices}
           onClose={() => {
             setEditingSite(null);
             setEditingDevice(null);
