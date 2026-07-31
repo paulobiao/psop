@@ -24,6 +24,7 @@ interface InventoryEditPanelProps {
   site?: Site;
   device?: InventoryDevice;
   sites: Site[];
+  devices: InventoryDevice[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -48,6 +49,7 @@ export default function InventoryEditPanel({
   site,
   device,
   sites,
+  devices,
   onClose,
   onSaved,
 }: InventoryEditPanelProps) {
@@ -73,6 +75,10 @@ export default function InventoryEditPanel({
     externalId: device?.externalId ?? '',
     deviceType:
       device?.deviceType ?? ('CAMERA' as DeviceType),
+    monitoringMode:
+      device?.monitoringMode ?? 'DIRECT',
+    gatewayDeviceId:
+      device?.gatewayDeviceId ?? null,
     manufacturer: device?.manufacturer ?? '',
     model: device?.model ?? '',
     firmwareVersion: device?.firmwareVersion ?? '',
@@ -129,6 +135,13 @@ export default function InventoryEditPanel({
           name: deviceForm.name.trim(),
           externalId: deviceForm.externalId.trim(),
           deviceType: deviceForm.deviceType,
+          monitoringMode:
+            deviceForm.monitoringMode,
+          gatewayDeviceId:
+            deviceForm.monitoringMode ===
+            'VIA_GATEWAY'
+              ? deviceForm.gatewayDeviceId
+              : null,
           manufacturer:
             deviceForm.manufacturer.trim() || undefined,
           model: deviceForm.model.trim() || undefined,
@@ -382,6 +395,89 @@ export default function InventoryEditPanel({
                   ))}
                 </select>
               </label>
+
+              <label>
+                Monitoring mode
+                <select
+                  value={deviceForm.monitoringMode}
+                  onChange={(event) =>
+                    setDeviceForm((current) => ({
+                      ...current,
+                      monitoringMode:
+                        event.target.value as
+                          | 'DIRECT'
+                          | 'VIA_GATEWAY'
+                          | 'INVENTORY_ONLY',
+                      gatewayDeviceId:
+                        event.target.value ===
+                        'VIA_GATEWAY'
+                          ? current.gatewayDeviceId
+                          : null,
+                    }))
+                  }
+                >
+                  <option value="DIRECT">
+                    Direct monitoring
+                  </option>
+                  <option value="VIA_GATEWAY">
+                    Monitored through gateway
+                  </option>
+                  <option value="INVENTORY_ONLY">
+                    Inventory only
+                  </option>
+                </select>
+              </label>
+
+              {deviceForm.monitoringMode ===
+                'VIA_GATEWAY' && (
+                <label>
+                  Monitoring gateway
+                  <select
+                    required
+                    value={
+                      deviceForm.gatewayDeviceId ??
+                      ''
+                    }
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({
+                        ...current,
+                        gatewayDeviceId:
+                          event.target.value ||
+                          null,
+                      }))
+                    }
+                  >
+                    <option value="">
+                      Select a gateway or recorder
+                    </option>
+                    {devices
+                      .filter(
+                        (candidate) =>
+                          candidate.id !==
+                            device.id &&
+                          candidate.siteId ===
+                            deviceForm.siteId &&
+                          candidate.monitoringMode ===
+                            'DIRECT' &&
+                          [
+                            'GATEWAY',
+                            'RECORDER',
+                          ].includes(
+                            candidate.deviceType,
+                          ),
+                      )
+                      .map((candidate) => (
+                        <option
+                          key={candidate.id}
+                          value={candidate.id}
+                        >
+                          {candidate.name} (
+                          {candidate.externalId})
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
 
               <div className="inventory-edit-row">
                 <label>

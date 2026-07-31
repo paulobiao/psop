@@ -132,6 +132,17 @@ export class DeviceRepository {
     return Boolean(site);
   }
 
+  async countManagedDevices(
+    gatewayDeviceId: string,
+  ): Promise<number> {
+    return this.prisma.device.count({
+      where: {
+        gatewayDeviceId,
+        deletedAt: null,
+      },
+    });
+  }
+
   async create(
     data: Prisma.DeviceUncheckedCreateInput,
   ): Promise<Device> {

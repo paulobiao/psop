@@ -141,6 +141,11 @@ export interface DeviceAlert {
   };
 }
 
+export type DeviceMonitoringMode =
+  | "DIRECT"
+  | "VIA_GATEWAY"
+  | "INVENTORY_ONLY";
+
 export type DeviceType =
   | "CAMERA"
   | "RECORDER"
@@ -169,6 +174,8 @@ export interface InventoryDevice {
   name: string;
   externalId: string;
   deviceType: DeviceType;
+  monitoringMode: DeviceMonitoringMode;
+  gatewayDeviceId: string | null;
   manufacturer: string | null;
   model: string | null;
   firmwareVersion: string | null;
@@ -194,6 +201,8 @@ export interface CreateDeviceInput {
   name: string;
   externalId: string;
   deviceType: DeviceType;
+  monitoringMode?: DeviceMonitoringMode;
+  gatewayDeviceId?: string | null;
   manufacturer?: string;
   model?: string;
   firmwareVersion?: string;

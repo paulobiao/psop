@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  getDevice,
   getDeviceAlerts,
   evaluateFleetConnectivity,
   getDeviceConnectivityEvents,
@@ -27,6 +28,7 @@ import type {
   ConnectivityState,
   DeviceAlert,
   FleetDevice,
+  InventoryDevice,
   TelemetryDemoState,
 } from "./types";
 
@@ -175,6 +177,8 @@ export default function DeviceDetailsPanel({
   onChanged,
 }: DeviceDetailsPanelProps) {
   const [telemetry, setTelemetry] = useState<FleetDevice | null>(null);
+  const [inventoryDevice, setInventoryDevice] =
+    useState<InventoryDevice | null>(null);
   const [events, setEvents] = useState<ConnectivityEvent[]>([]);
   const [alerts, setAlerts] = useState<DeviceAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -196,15 +200,22 @@ export default function DeviceDetailsPanel({
       }
 
       try {
-        const [telemetryResult, eventsResult, alertsResult, demoStatus] =
-          await Promise.all([
-            getDeviceTelemetry(deviceId, controller.signal),
-            getDeviceConnectivityEvents(deviceId, controller.signal),
-            getDeviceAlerts(deviceId, controller.signal),
-            getTelemetryDemoStatus(controller.signal),
-          ]);
+        const [
+          telemetryResult,
+          eventsResult,
+          alertsResult,
+          demoStatus,
+          deviceResult,
+        ] = await Promise.all([
+          getDeviceTelemetry(deviceId, controller.signal),
+          getDeviceConnectivityEvents(deviceId, controller.signal),
+          getDeviceAlerts(deviceId, controller.signal),
+          getTelemetryDemoStatus(controller.signal),
+          getDevice(deviceId, controller.signal),
+        ]);
 
         setTelemetry(telemetryResult);
+        setInventoryDevice(deviceResult);
         setDemoEnabled(demoStatus.enabled);
         setEvents(eventsResult.events);
         setAlerts(alertsResult);
@@ -336,7 +347,34 @@ export default function DeviceDetailsPanel({
 
         {telemetry && (
           <div className="device-details__body">
-            {demoEnabled && (
+            {inventoryDevice?.monitoringMode ===
+              'VIA_GATEWAY' && (
+              <section className="monitoring-notice">
+                <strong>
+                  Monitored through another device
+                </strong>
+                <span>
+                  Individual camera telemetry is not
+                  available until the gateway exposes
+                  device-level status.
+                </span>
+              </section>
+            )}
+
+            {inventoryDevice?.monitoringMode ===
+              'INVENTORY_ONLY' && (
+              <section className="monitoring-notice">
+                <strong>Inventory-only asset</strong>
+                <span>
+                  This equipment is registered but does
+                  not currently send telemetry.
+                </span>
+              </section>
+            )}
+
+            {demoEnabled &&
+              inventoryDevice?.monitoringMode ===
+                'DIRECT' && (
               <section className="demo-lab">
                 <div>
                   <span className="eyebrow">Local simulation</span>
@@ -373,7 +411,15 @@ export default function DeviceDetailsPanel({
               </section>
             )}
 
-            <DeviceIngestionPanel deviceId={deviceId} />
+            {inventoryDevice?.monitoringMode ===
+              'DIRECT' &&
+              ['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+                inventoryDevice.deviceType,
+              ) && (
+                <DeviceIngestionPanel
+                  deviceId={deviceId}
+                />
+              )}
 
             <section className="connection-hero">
               <div

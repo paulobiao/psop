@@ -461,6 +461,117 @@ describe(
     );
 
     it(
+      'maps devices to an organization-owned gateway',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const gateway =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Fleet Edge Gateway',
+              externalId:
+                `GATEWAY-${runId}`,
+              deviceType: 'GATEWAY',
+              monitoringMode: 'DIRECT',
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        const child =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Gateway Camera',
+              externalId:
+                `GATEWAY-CAM-${runId}`,
+              deviceType: 'CAMERA',
+              monitoringMode: 'VIA_GATEWAY',
+              gatewayDeviceId:
+                gateway.body.id,
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        expect(
+          child.body.monitoringMode,
+        ).toBe('VIA_GATEWAY');
+
+        expect(
+          child.body.gatewayDeviceId,
+        ).toBe(gateway.body.id);
+
+        const inventoryOnly =
+          await request(
+            app.getHttpServer(),
+          )
+            .patch(
+              `${API}/devices/${child.body.id}`,
+            )
+            .set(bearer(token))
+            .send({
+              monitoringMode:
+                'INVENTORY_ONLY',
+            })
+            .expect(200);
+
+        expect(
+          inventoryOnly.body
+            .gatewayDeviceId,
+        ).toBeNull();
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(`${API}/devices`)
+          .set(bearer(token))
+          .send({
+            siteId: siteAId,
+            name:
+              'Invalid Gateway Camera',
+            externalId:
+              `INVALID-GATEWAY-${runId}`,
+            deviceType: 'CAMERA',
+            monitoringMode:
+              'VIA_GATEWAY',
+            gatewayDeviceId:
+              localDeviceId,
+          })
+          .expect(400);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(`${API}/devices`)
+          .set(bearer(token))
+          .send({
+            siteId: siteAId,
+            name:
+              'Foreign Gateway Camera',
+            externalId:
+              `FOREIGN-GATEWAY-${runId}`,
+            deviceType: 'CAMERA',
+            monitoringMode:
+              'VIA_GATEWAY',
+            gatewayDeviceId:
+              foreignDeviceId,
+          })
+          .expect(404);
+      },
+    );
+
+    it(
       'prevents viewers from changing inventory',
       async () => {
         const token =

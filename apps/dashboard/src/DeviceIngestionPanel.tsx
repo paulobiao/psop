@@ -143,7 +143,7 @@ export default function DeviceIngestionPanel({
     if (
       status?.configured &&
       !window.confirm(
-        "Rotate this camera key? The previous key will stop working immediately.",
+        "Rotate this device key? The previous key will stop working immediately.",
       )
     ) {
       return;
@@ -228,8 +228,8 @@ export default function DeviceIngestionPanel({
 
                 <p>
                   {status.configured
-                    ? "This camera can authenticate telemetry heartbeats."
-                    : "Generate a key before connecting a local camera or simulator."}
+                    ? "This device can authenticate telemetry heartbeats."
+                    : "Generate a key before connecting a local device, gateway or simulator."}
                 </p>
               </div>
 

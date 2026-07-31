@@ -37,9 +37,14 @@ export class DeviceTelemetryIngestionService {
       throw new NotFoundException('Device not found');
     }
 
-    if (device.deviceType !== 'CAMERA') {
+    if (
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+        device.deviceType,
+      ) ||
+      device.monitoringMode !== 'DIRECT'
+    ) {
       throw new BadRequestException(
-        'Ingestion credentials are available only for camera devices',
+        'Ingestion credentials are available only for directly monitored cameras, recorders and gateways',
       );
     }
 
@@ -73,9 +78,14 @@ export class DeviceTelemetryIngestionService {
       throw new NotFoundException('Device not found');
     }
 
-    if (device.deviceType !== 'CAMERA') {
+    if (
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+        device.deviceType,
+      ) ||
+      device.monitoringMode !== 'DIRECT'
+    ) {
       throw new BadRequestException(
-        'Ingestion credentials are available only for camera devices',
+        'Ingestion credentials are available only for directly monitored cameras, recorders and gateways',
       );
     }
 
@@ -138,7 +148,10 @@ export class DeviceTelemetryIngestionService {
 
     if (
       !device ||
-      device.deviceType !== 'CAMERA' ||
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+        device.deviceType,
+      ) ||
+      device.monitoringMode !== 'DIRECT' ||
       device.status !== 'ACTIVE' ||
       !device.ingestionCredential ||
       !verifyDeviceIngestionKey(deviceKey, device.ingestionCredential.keyHash)

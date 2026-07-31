@@ -342,6 +342,17 @@ export function getDevices(signal?: AbortSignal): Promise<InventoryDevice[]> {
   return requestJson<InventoryDevice[]>("/devices", {}, signal);
 }
 
+export function getDevice(
+  deviceId: string,
+  signal?: AbortSignal,
+): Promise<InventoryDevice> {
+  return requestJson<InventoryDevice>(
+    `/devices/${deviceId}`,
+    {},
+    signal,
+  );
+}
+
 export function createDevice(
   input: CreateDeviceInput,
 ): Promise<InventoryDevice> {
