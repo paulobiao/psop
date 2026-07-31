@@ -184,6 +184,63 @@
         "clear": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Configure Edge Gateway",
+      "type": "shell",
+      "command": "python3 apps/gateway/configure_gateway.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Edge Gateway Diagnose",
+      "type": "shell",
+      "command": "python3 apps/gateway/psop_gateway.py --config ${input:psopGatewayConfig} --diagnose",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Edge Gateway Once",
+      "type": "shell",
+      "command": "bash apps/gateway/run_gateway.sh --config ${input:psopGatewayConfig} --once",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PSOP: Edge Gateway Run",
+      "type": "shell",
+      "command": "bash apps/gateway/run_gateway.sh --config ${input:psopGatewayConfig}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "isBackground": true,
+      "problemMatcher": []
     }
   ],
   "inputs": [
@@ -210,6 +267,12 @@
         "unknown"
       ],
       "default": "online"
+    },
+    {
+      "id": "psopGatewayConfig",
+      "type": "promptString",
+      "description": "Edge Gateway configuration path",
+      "default": "apps/gateway/gateway.local.json"
     }
   ]
 }

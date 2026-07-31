@@ -1,0 +1,16 @@
+{
+  "apiUrl": "http://127.0.0.1:3100/api/v1",
+  "deviceId": "00000000-0000-4000-8000-000000000000",
+  "externalId": "CAM-001",
+  "intervalSeconds": 30,
+  "timeoutSeconds": 3,
+  "model": "Lorex camera or recorder",
+  "firmware": null,
+  "spoolPath": "apps/gateway/state/pending.db",
+  "target": {"host": "192.168.1.100"},
+  "probes": [
+    {"name": "web", "type": "http", "port": 80, "path": "/", "required": true, "verifyTls": false},
+    {"name": "secure-web", "type": "https", "port": 443, "path": "/", "required": false, "verifyTls": false},
+    {"name": "rtsp", "type": "rtsp", "port": 554, "path": "/", "required": false}
+  ]
+}

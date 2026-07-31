@@ -133,3 +133,9 @@ The laboratory exercises the same health-classification, alert synchronization, 
 ## Local telemetry ingestion evidence
 
 PSOP includes a PostgreSQL-backed device ingestion path with independent camera credentials, one-time key rotation, validated heartbeat payloads, persistent telemetry snapshots, connectivity history and automatic alert synchronization.
+
+## Edge gateway evidence
+
+PSOP includes a dependency-free Python edge gateway that monitors real local-network camera, DVR, and NVR services through TCP, HTTP, HTTPS, and RTSP probes. It authenticates with an independent device key and buffers the latest unsent telemetry in SQLite during API outages.
+
+Permanent tests verify configuration parsing, live TCP probing, health classification, secure device headers, last-write-wins buffering, API-failure resilience, and offline heartbeat withholding.
