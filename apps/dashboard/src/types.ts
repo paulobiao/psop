@@ -36,7 +36,9 @@ export interface FleetDevice {
     id: string;
     name: string;
     externalId: string;
-    deviceType: string;
+    deviceType: DeviceType;
+    monitoringMode: DeviceMonitoringMode;
+    gatewayDeviceId: string | null;
     administrativeStatus: string;
     siteId: string;
     siteCode: string;

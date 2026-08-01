@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   Clock3,
   Database,
+  HardDrive,
+  Network,
   Radio,
   RefreshCw,
   Search,
@@ -152,6 +154,26 @@ function SummaryCard({
   );
 }
 
+function FleetDeviceIcon({
+  type,
+}: {
+  type: FleetDevice['device']['deviceType'];
+}) {
+  if (type === 'CAMERA') {
+    return <Camera size={17} />;
+  }
+
+  if (type === 'RECORDER') {
+    return <HardDrive size={17} />;
+  }
+
+  if (type === 'GATEWAY') {
+    return <Network size={17} />;
+  }
+
+  return <Server size={17} />;
+}
+
 function FleetRow({
   item,
   onSelect,
@@ -177,7 +199,9 @@ function FleetRow({
       <td>
         <div className="device-name">
           <span className="device-name__icon">
-            <Camera size={17} />
+            <FleetDeviceIcon
+              type={item.device.deviceType}
+            />
           </span>
           <span>
             <strong>{item.device.name}</strong>
@@ -682,10 +706,10 @@ function App() {
               />
 
               <SummaryCard
-                label="Cameras"
+                label="Monitored devices"
                 value={overview.summary.cameras}
-                caption="Registered camera devices"
-                icon={<Camera size={20} />}
+                caption="Direct cameras, recorders and gateways"
+                icon={<Server size={20} />}
               />
 
               <SummaryCard
@@ -747,7 +771,7 @@ function App() {
                     <span className="eyebrow">
                       Device health
                     </span>
-                    <h2>Camera fleet</h2>
+                    <h2>Monitored equipment</h2>
                   </div>
 
                   <span className="panel__count">
@@ -768,7 +792,7 @@ function App() {
                           event.target.value,
                         )
                       }
-                      placeholder="Search camera, ID or site"
+                      placeholder="Search device, ID or site"
                     />
                   </label>
 
@@ -849,7 +873,7 @@ function App() {
                           Priority
                         </option>
                         <option value="NAME">
-                          Camera name
+                          Device name
                         </option>
                         <option value="SITE">
                           Site
@@ -911,12 +935,12 @@ function App() {
                     <Server size={26} />
                     <strong>
                       {overview.fleet.length === 0
-                        ? 'No cameras registered'
-                        : 'No cameras match the filters'}
+                        ? 'No directly monitored equipment'
+                        : 'No devices match the filters'}
                     </strong>
                     <span>
                       {overview.fleet.length === 0
-                        ? 'Add a camera device to begin monitoring.'
+                        ? 'Add a directly monitored camera, recorder or gateway.'
                         : 'Adjust the search or clear the selected filters.'}
                     </span>
                   </div>
