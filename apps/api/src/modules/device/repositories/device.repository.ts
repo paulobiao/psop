@@ -71,6 +71,43 @@ export class DeviceRepository {
     });
   }
 
+  async findAllTelemetryDevicesWithSite(
+    organizationId?: string,
+  ): Promise<DeviceWithSite[]> {
+    return this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        monitoringMode: 'DIRECT',
+        deviceType: {
+          in: [
+            'CAMERA',
+            'RECORDER',
+            'GATEWAY',
+          ],
+        },
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
+      },
+      include: {
+        site: true,
+      },
+      orderBy: [
+        {
+          siteId: 'asc',
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+  }
+
   async findById(
     id: string,
     organizationId?: string,

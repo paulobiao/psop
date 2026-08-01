@@ -53,6 +53,7 @@ describe('PSOP local telemetry ingestion', () => {
   let siteBId: string;
   let localDeviceId: string;
   let foreignDeviceId: string;
+  let gatewayDeviceId: string;
   let adminEmail: string;
   let viewerEmail: string;
   let adminToken: string;
@@ -191,6 +192,22 @@ describe('PSOP local telemetry ingestion', () => {
 
     localDeviceId = localDevice.id;
     foreignDeviceId = foreignDevice.id;
+
+    const gatewayDevice =
+      await prisma.device.create({
+        data: {
+          siteId: siteAId,
+          name: 'Local Edge Gateway',
+          externalId:
+            `LOCAL-GATEWAY-${runId}`,
+          deviceType: 'GATEWAY',
+          monitoringMode: 'DIRECT',
+          status: 'ACTIVE',
+          expectedHeartbeatInterval: 60,
+        },
+      });
+
+    gatewayDeviceId = gatewayDevice.id;
 
     adminToken = await login(adminEmail);
 
@@ -416,6 +433,77 @@ describe('PSOP local telemetry ingestion', () => {
     expect(JSON.stringify(response.body)).not.toContain(deviceKey);
 
     expect(response.body.deviceKey).toBeUndefined();
+  });
+
+  it('accepts authenticated telemetry from a direct gateway', async () => {
+    const rotation = await request(
+      app.getHttpServer(),
+    )
+      .post(
+        `${API}/devices/${gatewayDeviceId}/ingestion-key/rotate`,
+      )
+      .set(bearer(adminToken))
+      .expect(201);
+
+    const gatewayKey =
+      rotation.body.deviceKey;
+
+    const response = await request(
+      app.getHttpServer(),
+    )
+      .post(`${API}/telemetry/ingest`)
+      .set('x-device-id', gatewayDeviceId)
+      .set('x-device-key', gatewayKey)
+      .send(
+        telemetryPayload({
+          model: 'Local Edge Gateway',
+          firmware: 'gateway-1.0.0',
+        }),
+      )
+      .expect(201);
+
+    expect(
+      response.body.device.deviceType,
+    ).toBe('GATEWAY');
+
+    expect(
+      response.body.connectivity.state,
+    ).toBe('ONLINE');
+
+    const details = await request(
+      app.getHttpServer(),
+    )
+      .get(
+        `${API}/devices/${gatewayDeviceId}/telemetry`,
+      )
+      .set(bearer(adminToken))
+      .expect(200);
+
+    expect(
+      details.body.telemetry.model,
+    ).toBe('Local Edge Gateway');
+
+    const fleet = await request(
+      app.getHttpServer(),
+    )
+      .get(`${API}/devices/telemetry`)
+      .set(bearer(adminToken))
+      .expect(200);
+
+    expect(
+      fleet.body.devices.some(
+        (device: {
+          device: {
+            id: string;
+            deviceType: string;
+          };
+        }) =>
+          device.device.id ===
+            gatewayDeviceId &&
+          device.device.deviceType ===
+            'GATEWAY',
+      ),
+    ).toBe(true);
   });
 
   it('rejects missing, invalid and cross-device credentials', async () => {

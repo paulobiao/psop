@@ -53,9 +53,11 @@ export class DeviceTelemetryService {
   }
 
   async findFleet(organizationId?: string) {
-    const devices = await this.deviceRepository.findAllCamerasWithSite(
-      organizationId,
-    );
+    const devices =
+      await this.deviceRepository
+        .findAllTelemetryDevicesWithSite(
+          organizationId,
+        );
 
     let items: TelemetryItem[];
 
@@ -150,9 +152,14 @@ export class DeviceTelemetryService {
       throw new NotFoundException('Device not found');
     }
 
-    if (device.deviceType !== 'CAMERA') {
+    if (
+      device.monitoringMode !== 'DIRECT' ||
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+        device.deviceType,
+      )
+    ) {
       throw new BadRequestException(
-        'Telemetry is currently available only for camera devices',
+        'Telemetry is available only for directly monitored cameras, recorders and gateways',
       );
     }
 
@@ -276,6 +283,10 @@ export class DeviceTelemetryService {
           device.externalId,
         deviceType:
           device.deviceType,
+        monitoringMode:
+          device.monitoringMode,
+        gatewayDeviceId:
+          device.gatewayDeviceId,
         administrativeStatus:
           device.status,
         siteId: device.siteId,

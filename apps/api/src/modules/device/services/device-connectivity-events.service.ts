@@ -142,9 +142,10 @@ export class DeviceConnectivityEventsService {
     const allowedDeviceIds = organizationId
       ? new Set(
           (
-            await this.deviceRepository.findAllCamerasWithSite(
-              organizationId,
-            )
+            await this.deviceRepository
+              .findAllTelemetryDevicesWithSite(
+                organizationId,
+              )
           ).map((device) => device.id),
         )
       : null;
@@ -237,9 +238,14 @@ export class DeviceConnectivityEventsService {
       throw new NotFoundException('Device not found');
     }
 
-    if (device.deviceType !== 'CAMERA') {
+    if (
+      device.monitoringMode !== 'DIRECT' ||
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+        device.deviceType,
+      )
+    ) {
       throw new BadRequestException(
-        'Connectivity events are available only for camera devices',
+        'Connectivity events are available only for directly monitored cameras, recorders and gateways',
       );
     }
 

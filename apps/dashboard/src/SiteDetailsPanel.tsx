@@ -189,7 +189,7 @@ export default function SiteDetailsPanel({
     [devices, selectedSiteId],
   );
 
-  const siteCameras = useMemo(
+  const siteMonitoredDevices = useMemo(
     () =>
       overview?.fleet.filter(
         (item) =>
@@ -213,27 +213,30 @@ export default function SiteDetailsPanel({
   const summary = useMemo(
     () => ({
       equipment: siteDevices.length,
-      cameras: siteCameras.length,
-      online: siteCameras.filter(
+      cameras: siteDevices.filter(
+        (device) =>
+          device.deviceType === 'CAMERA',
+      ).length,
+      online: siteMonitoredDevices.filter(
         (item) =>
           item.connectivity.state === 'ONLINE',
       ).length,
-      degraded: siteCameras.filter(
+      degraded: siteMonitoredDevices.filter(
         (item) =>
           item.connectivity.state === 'DEGRADED',
       ).length,
-      offline: siteCameras.filter(
+      offline: siteMonitoredDevices.filter(
         (item) =>
           item.connectivity.state === 'OFFLINE',
       ).length,
-      attention: siteCameras.filter((item) =>
+      attention: siteMonitoredDevices.filter((item) =>
         ['NEVER_SEEN', 'UNKNOWN'].includes(
           item.connectivity.state,
         ),
       ).length,
       alerts: siteAlerts.length,
     }),
-    [siteDevices, siteCameras, siteAlerts],
+    [siteDevices, siteMonitoredDevices, siteAlerts],
   );
 
   return (
@@ -431,27 +434,37 @@ export default function SiteDetailsPanel({
 
                   <div className="site-equipment-list">
                     {siteDevices.map((device) => {
-                      const camera = siteCameras.find(
+                      const monitoredDevice =
+                        siteMonitoredDevices.find(
                         (item) =>
                           item.device.id === device.id,
                       );
+
+                      const canOpenDetails =
+                        device.deviceType === 'CAMERA' ||
+                        (
+                          device.monitoringMode ===
+                            'DIRECT' &&
+                          [
+                            'RECORDER',
+                            'GATEWAY',
+                          ].includes(
+                            device.deviceType,
+                          )
+                        );
 
                       return (
                         <button
                           type="button"
                           className={
-                            device.deviceType === 'CAMERA'
+                            canOpenDetails
                               ? 'site-equipment site-equipment--clickable'
                               : 'site-equipment'
                           }
                           key={device.id}
-                          disabled={
-                            device.deviceType !== 'CAMERA'
-                          }
+                          disabled={!canOpenDetails}
                           onClick={() => {
-                            if (
-                              device.deviceType === 'CAMERA'
-                            ) {
+                            if (canOpenDetails) {
                               onSelectDevice(device.id);
                             }
                           }}
@@ -502,11 +515,11 @@ export default function SiteDetailsPanel({
                             <span className="inventory-status">
                               VIA GATEWAY
                             </span>
-                          ) : camera ? (
+                          ) : monitoredDevice ? (
                             <span
-                              className={`badge badge--${camera.connectivity.state.toLowerCase()}`}
+                              className={`badge badge--${monitoredDevice.connectivity.state.toLowerCase()}`}
                             >
-                              {camera.connectivity.state}
+                              {monitoredDevice.connectivity.state}
                             </span>
                           ) : (
                             <span className="inventory-status">

@@ -200,26 +200,65 @@ export default function DeviceDetailsPanel({
       }
 
       try {
-        const [
-          telemetryResult,
-          eventsResult,
-          alertsResult,
-          demoStatus,
-          deviceResult,
-        ] = await Promise.all([
-          getDeviceTelemetry(deviceId, controller.signal),
-          getDeviceConnectivityEvents(deviceId, controller.signal),
-          getDeviceAlerts(deviceId, controller.signal),
-          getTelemetryDemoStatus(controller.signal),
-          getDevice(deviceId, controller.signal),
-        ]);
+        const deviceResult = await getDevice(
+          deviceId,
+          controller.signal,
+        );
 
-        setTelemetry(telemetryResult);
         setInventoryDevice(deviceResult);
-        setDemoEnabled(demoStatus.enabled);
-        setEvents(eventsResult.events);
-        setAlerts(alertsResult);
-        setError(null);
+        setTelemetry(null);
+        setEvents([]);
+        setAlerts([]);
+        setDemoEnabled(false);
+
+        const supportsDirectTelemetry =
+          deviceResult.monitoringMode ===
+            'DIRECT' &&
+          [
+            'CAMERA',
+            'RECORDER',
+            'GATEWAY',
+          ].includes(deviceResult.deviceType);
+
+        if (!supportsDirectTelemetry) {
+          const alertsResult =
+            await getDeviceAlerts(
+              deviceId,
+              controller.signal,
+            );
+
+          setAlerts(alertsResult);
+          setError(null);
+        } else {
+          const [
+            telemetryResult,
+            eventsResult,
+            alertsResult,
+            demoStatus,
+          ] = await Promise.all([
+            getDeviceTelemetry(
+              deviceId,
+              controller.signal,
+            ),
+            getDeviceConnectivityEvents(
+              deviceId,
+              controller.signal,
+            ),
+            getDeviceAlerts(
+              deviceId,
+              controller.signal,
+            ),
+            getTelemetryDemoStatus(
+              controller.signal,
+            ),
+          ]);
+
+          setTelemetry(telemetryResult);
+          setDemoEnabled(demoStatus.enabled);
+          setEvents(eventsResult.events);
+          setAlerts(alertsResult);
+          setError(null);
+        }
       } catch (requestError) {
         setError(
           requestError instanceof Error
@@ -292,16 +331,24 @@ export default function DeviceDetailsPanel({
         className="device-details"
         role="dialog"
         aria-modal="true"
-        aria-label="Camera details"
+        aria-label="Device details"
       >
         <header className="device-details__header">
           <div>
-            <span className="eyebrow">Camera intelligence</span>
-            <h2>{telemetry?.device.name ?? "Device details"}</h2>
+            <span className="eyebrow">Device intelligence</span>
+            <h2>
+              {telemetry?.device.name ??
+                inventoryDevice?.name ??
+                "Device details"}
+            </h2>
 
-            {telemetry && (
+            {(telemetry || inventoryDevice) && (
               <p>
-                {telemetry.device.siteName} · {telemetry.device.externalId}
+                {telemetry?.device.siteName ??
+                  "Registered equipment"}{" "}
+                ·{" "}
+                {telemetry?.device.externalId ??
+                  inventoryDevice?.externalId}
               </p>
             )}
           </div>
@@ -331,10 +378,10 @@ export default function DeviceDetailsPanel({
           </div>
         </header>
 
-        {loading && !telemetry && (
+        {loading && !inventoryDevice && (
           <div className="details-loading">
             <RefreshCw className="spin" size={25} />
-            <strong>Loading camera details…</strong>
+            <strong>Loading device details…</strong>
           </div>
         )}
 
@@ -345,7 +392,7 @@ export default function DeviceDetailsPanel({
           </div>
         )}
 
-        {telemetry && (
+        {inventoryDevice && (
           <div className="device-details__body">
             {inventoryDevice?.monitoringMode ===
               'VIA_GATEWAY' && (
@@ -421,6 +468,7 @@ export default function DeviceDetailsPanel({
                 />
               )}
 
+            {telemetry && (
             <section className="connection-hero">
               <div
                 className={`connection-hero__icon connection-hero__icon--${telemetry.connectivity.state.toLowerCase()}`}
@@ -453,12 +501,14 @@ export default function DeviceDetailsPanel({
                 {stateLabel(telemetry.connectivity.state)}
               </span>
             </section>
+            )}
 
+            {telemetry && (
             <section className="details-section">
               <div className="details-section__heading">
                 <div>
                   <span className="eyebrow">Live telemetry</span>
-                  <h3>Camera health</h3>
+                  <h3>Device health</h3>
                 </div>
                 <Gauge size={19} />
               </div>
@@ -516,6 +566,7 @@ export default function DeviceDetailsPanel({
                 />
               </div>
             </section>
+            )}
 
             <section className="details-section">
               <div className="details-section__heading">
@@ -538,7 +589,7 @@ export default function DeviceDetailsPanel({
                   <div className="details-empty">
                     <Database size={23} />
                     <strong>No alert history</strong>
-                    <span>Alerts for this camera will appear here.</span>
+                    <span>Alerts for this device will appear here.</span>
                   </div>
                 )}
               </div>
