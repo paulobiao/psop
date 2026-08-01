@@ -572,6 +572,251 @@ describe(
     );
 
     it(
+      'returns honest gateway-derived status without direct child telemetry',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const gateway =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Derived Status Gateway',
+              externalId:
+                `DERIVED-GATEWAY-${runId}`,
+              deviceType: 'GATEWAY',
+              monitoringMode: 'DIRECT',
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        const child =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Derived Status Camera',
+              externalId:
+                `DERIVED-CAM-${runId}`,
+              deviceType: 'CAMERA',
+              monitoringMode:
+                'VIA_GATEWAY',
+              gatewayDeviceId:
+                gateway.body.id,
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        const overview =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/operations/overview`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          overview.body.fleet.some(
+            (item: {
+              device: {
+                id: string;
+              };
+            }) =>
+              item.device.id ===
+              child.body.id,
+          ),
+        ).toBe(false);
+
+        const derived =
+          overview.body.gatewayManaged.find(
+            (item: {
+              device: {
+                id: string;
+              };
+            }) =>
+              item.device.id ===
+              child.body.id,
+          );
+
+        expect(derived).toBeDefined();
+
+        expect(
+          derived.monitoring
+            .individualVerification,
+        ).toBe('NOT_VERIFIED');
+
+        expect(
+          derived.gateway.id,
+        ).toBe(gateway.body.id);
+
+        expect(
+          derived.gateway.connectivity.state,
+        ).toBeDefined();
+
+        expect(
+          overview.body.summary
+            .gatewayManaged,
+        ).toBeGreaterThanOrEqual(1);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .patch(
+            `${API}/devices/${child.body.id}`,
+          )
+          .set(bearer(token))
+          .send({
+            monitoringMode:
+              'INVENTORY_ONLY',
+          })
+          .expect(200);
+      },
+    );
+
+    it(
+      'resolves direct alerts when equipment moves behind a gateway',
+      async () => {
+        const token =
+          await login(adminAEmail);
+
+        const gateway =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Alert Transition Gateway',
+              externalId:
+                `ALERT-GATEWAY-${runId}`,
+              deviceType: 'GATEWAY',
+              monitoringMode: 'DIRECT',
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        const camera =
+          await request(
+            app.getHttpServer(),
+          )
+            .post(`${API}/devices`)
+            .set(bearer(token))
+            .send({
+              siteId: siteAId,
+              name:
+                'Alert Transition Camera',
+              externalId:
+                `ALERT-CAM-${runId}`,
+              deviceType: 'CAMERA',
+              monitoringMode: 'DIRECT',
+              status: 'ACTIVE',
+            })
+            .expect(201);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/${camera.body.id}/demo-state`,
+          )
+          .set(bearer(token))
+          .send({
+            state: 'OFFLINE',
+          })
+          .expect(201);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/telemetry/evaluate`,
+          )
+          .set(bearer(token))
+          .expect(201);
+
+        const before =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/alerts?deviceId=${camera.body.id}`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          before.body.some(
+            (alert: {
+              status: string;
+            }) =>
+              alert.status === 'OPEN',
+          ),
+        ).toBe(true);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .patch(
+            `${API}/devices/${camera.body.id}`,
+          )
+          .set(bearer(token))
+          .send({
+            monitoringMode:
+              'VIA_GATEWAY',
+            gatewayDeviceId:
+              gateway.body.id,
+          })
+          .expect(200);
+
+        const after =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/alerts?deviceId=${camera.body.id}`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          after.body.some(
+            (alert: {
+              status: string;
+            }) =>
+              alert.status === 'OPEN',
+          ),
+        ).toBe(false);
+
+        expect(
+          after.body.some(
+            (alert: {
+              status: string;
+              connectivityState:
+                string | null;
+            }) =>
+              alert.status ===
+                'RESOLVED' &&
+              alert.connectivityState ===
+                'NOT_DIRECTLY_MONITORED',
+          ),
+        ).toBe(true);
+      },
+    );
+
+    it(
       'prevents viewers from changing inventory',
       async () => {
         const token =

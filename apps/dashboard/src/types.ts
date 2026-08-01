@@ -21,6 +21,7 @@ export interface RotatedDeviceIngestionKey extends DeviceIngestionKeyStatus {
 export interface OperationsSummary {
   sites: number;
   cameras: number;
+  gatewayManaged: number;
   online: number;
   degraded: number;
   offline: number;
@@ -64,6 +65,37 @@ export interface FleetDevice {
   } | null;
 }
 
+export interface GatewayManagedDevice {
+  device: {
+    id: string;
+    name: string;
+    externalId: string;
+    deviceType: DeviceType;
+    administrativeStatus: string;
+    siteId: string;
+    siteCode: string;
+    siteName: string;
+  };
+  monitoring: {
+    source: "GATEWAY_DERIVED";
+    individualVerification: "NOT_VERIFIED";
+  };
+  gateway: {
+    id: string;
+    name: string;
+    externalId: string;
+    deviceType: DeviceType;
+    connectivity: {
+      state: ConnectivityState;
+      reasons: string[];
+      lastHeartbeatAt: string | null;
+      ageSeconds: number | null;
+      expectedHeartbeatIntervalSeconds: number;
+      offlineAfterSeconds: number;
+    };
+  };
+}
+
 export interface ActiveAlert {
   id: string;
   deviceId: string;
@@ -100,6 +132,7 @@ export interface OperationsOverview {
   generatedAt: string;
   summary: OperationsSummary;
   fleet: FleetDevice[];
+  gatewayManaged: GatewayManagedDevice[];
   activeAlerts: ActiveAlert[];
   recentEvents: ConnectivityEvent[];
 }

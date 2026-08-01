@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Device } from '../../../../generated/prisma/client.js';
+import { AlertService } from '../../alert/services/alert.service.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceRepository } from '../repositories/device.repository';
@@ -17,6 +18,7 @@ type MonitoringMode =
 export class DeviceService {
   constructor(
     private readonly deviceRepository: DeviceRepository,
+    private readonly alertService: AlertService,
   ) {}
 
   async findAll(
@@ -118,10 +120,28 @@ export class DeviceService {
           : data.gatewayDeviceId,
     });
 
-    return this.deviceRepository.update(id, {
-      ...data,
-      ...monitoring,
-    });
+    const updated =
+      await this.deviceRepository.update(id, {
+        ...data,
+        ...monitoring,
+      });
+
+    const supportsDirectTelemetry =
+      updated.monitoringMode === 'DIRECT' &&
+      [
+        'CAMERA',
+        'RECORDER',
+        'GATEWAY',
+      ].includes(updated.deviceType);
+
+    if (!supportsDirectTelemetry) {
+      await this.alertService.resolveConnectivityAlert(
+        updated.id,
+        'NOT_DIRECTLY_MONITORED',
+      );
+    }
+
+    return updated;
   }
 
   async remove(

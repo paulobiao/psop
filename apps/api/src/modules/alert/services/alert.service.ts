@@ -106,9 +106,13 @@ export class AlertService {
     });
   }
 
-  async resolveConnectivityAlert(deviceId: string) {
+  async resolveConnectivityAlert(
+    deviceId: string,
+    connectivityState = 'ONLINE',
+  ) {
     return this.alertRepository.resolveConnectivityAlert(
       deviceId,
+      connectivityState,
     );
   }
 
