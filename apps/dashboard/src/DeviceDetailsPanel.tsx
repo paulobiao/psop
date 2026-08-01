@@ -7,6 +7,7 @@ import {
   Database,
   Gauge,
   HardDrive,
+  Network,
   RefreshCw,
   Thermometer,
   Wifi,
@@ -16,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getDevice,
   getDeviceAlerts,
+  getOperationsOverview,
   evaluateFleetConnectivity,
   getDeviceConnectivityEvents,
   getDeviceTelemetry,
@@ -28,6 +30,7 @@ import type {
   ConnectivityState,
   DeviceAlert,
   FleetDevice,
+  GatewayManagedDevice,
   InventoryDevice,
   TelemetryDemoState,
 } from "./types";
@@ -179,6 +182,12 @@ export default function DeviceDetailsPanel({
   const [telemetry, setTelemetry] = useState<FleetDevice | null>(null);
   const [inventoryDevice, setInventoryDevice] =
     useState<InventoryDevice | null>(null);
+  const [
+    derivedGatewayStatus,
+    setDerivedGatewayStatus,
+  ] = useState<GatewayManagedDevice | null>(
+    null,
+  );
   const [events, setEvents] = useState<ConnectivityEvent[]>([]);
   const [alerts, setAlerts] = useState<DeviceAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -207,6 +216,7 @@ export default function DeviceDetailsPanel({
 
         setInventoryDevice(deviceResult);
         setTelemetry(null);
+        setDerivedGatewayStatus(null);
         setEvents([]);
         setAlerts([]);
         setDemoEnabled(false);
@@ -221,13 +231,26 @@ export default function DeviceDetailsPanel({
           ].includes(deviceResult.deviceType);
 
         if (!supportsDirectTelemetry) {
-          const alertsResult =
-            await getDeviceAlerts(
+          const [
+            alertsResult,
+            overviewResult,
+          ] = await Promise.all([
+            getDeviceAlerts(
               deviceId,
               controller.signal,
-            );
+            ),
+            getOperationsOverview(
+              controller.signal,
+            ),
+          ]);
 
           setAlerts(alertsResult);
+          setDerivedGatewayStatus(
+            overviewResult.gatewayManaged.find(
+              (item) =>
+                item.device.id === deviceId,
+            ) ?? null,
+          );
           setError(null);
         } else {
           const [
@@ -404,6 +427,53 @@ export default function DeviceDetailsPanel({
                   Individual camera telemetry is not
                   available until the gateway exposes
                   device-level status.
+                </span>
+              </section>
+            )}
+
+            {derivedGatewayStatus && (
+              <section className="gateway-derived-card">
+                <div className="gateway-derived-card__icon">
+                  <Network size={21} />
+                </div>
+
+                <div className="gateway-derived-card__content">
+                  <span className="eyebrow">
+                    Gateway-derived visibility
+                  </span>
+                  <h3>
+                    {derivedGatewayStatus.gateway.name}
+                  </h3>
+                  <p>
+                    The monitoring gateway is{' '}
+                    <strong>
+                      {stateLabel(
+                        derivedGatewayStatus.gateway
+                          .connectivity.state,
+                      )}
+                    </strong>
+                    . Its last heartbeat was{' '}
+                    {formatDate(
+                      derivedGatewayStatus.gateway
+                        .connectivity.lastHeartbeatAt,
+                    )}
+                    .
+                  </p>
+                  <small>
+                    Individual camera stream, recording and
+                    device health are not verified by this
+                    gateway heartbeat.
+                  </small>
+                </div>
+
+                <span
+                  className={`badge badge--${derivedGatewayStatus.gateway.connectivity.state.toLowerCase()}`}
+                >
+                  Gateway{' '}
+                  {stateLabel(
+                    derivedGatewayStatus.gateway
+                      .connectivity.state,
+                  )}
                 </span>
               </section>
             )}

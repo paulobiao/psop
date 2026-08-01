@@ -44,6 +44,7 @@ import type {
   ConnectivityEvent,
   ConnectivityState,
   FleetDevice,
+  GatewayManagedDevice,
   OperationsOverview,
 } from './types';
 
@@ -241,6 +242,52 @@ function FleetRow({
       </td>
       <td>{item.telemetry?.firmware ?? '—'}</td>
     </tr>
+  );
+}
+
+function GatewayManagedRow({
+  item,
+  onSelect,
+}: {
+  item: GatewayManagedDevice;
+  onSelect: () => void;
+}) {
+  const gatewayState =
+    item.gateway.connectivity.state;
+
+  return (
+    <button
+      type="button"
+      className="gateway-managed-row"
+      onClick={onSelect}
+    >
+      <span className="device-name__icon">
+        <FleetDeviceIcon
+          type={item.device.deviceType}
+        />
+      </span>
+
+      <span className="gateway-managed-row__device">
+        <strong>{item.device.name}</strong>
+        <small>
+          {item.device.externalId} · Individual status
+          not verified
+        </small>
+      </span>
+
+      <span className="gateway-managed-row__gateway">
+        <strong>{item.gateway.name}</strong>
+        <small>
+          {item.gateway.externalId} · Gateway heartbeat
+        </small>
+      </span>
+
+      <span
+        className={`badge badge--${gatewayState.toLowerCase()}`}
+      >
+        Gateway {stateLabel(gatewayState)}
+      </span>
+    </button>
   );
 }
 
@@ -713,6 +760,13 @@ function App() {
               />
 
               <SummaryCard
+                label="Gateway managed"
+                value={overview.summary.gatewayManaged}
+                caption="Individual status not verified"
+                icon={<Network size={20} />}
+              />
+
+              <SummaryCard
                 label="Online"
                 value={overview.summary.online}
                 caption="Reporting normally"
@@ -944,6 +998,44 @@ function App() {
                         : 'Adjust the search or clear the selected filters.'}
                     </span>
                   </div>
+                )}
+
+                {overview.gatewayManaged.length > 0 && (
+                  <section className="gateway-managed-section">
+                    <div className="gateway-managed-section__heading">
+                      <div>
+                        <span className="eyebrow">
+                          Derived visibility
+                        </span>
+                        <h3>Gateway-managed equipment</h3>
+                        <p>
+                          Gateway connectivity is known.
+                          Individual camera streaming and
+                          recording are not verified.
+                        </p>
+                      </div>
+
+                      <span className="panel__count">
+                        {overview.gatewayManaged.length}
+                      </span>
+                    </div>
+
+                    <div className="gateway-managed-list">
+                      {overview.gatewayManaged.map(
+                        (item) => (
+                          <GatewayManagedRow
+                            key={item.device.id}
+                            item={item}
+                            onSelect={() =>
+                              setSelectedDeviceId(
+                                item.device.id,
+                              )
+                            }
+                          />
+                        ),
+                      )}
+                    </div>
+                  </section>
                 )}
               </div>
 

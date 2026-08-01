@@ -51,6 +51,25 @@ function deviceTypeLabel(type: DeviceType): string {
   return labels[type];
 }
 
+function connectivityLabel(
+  state:
+    | 'ONLINE'
+    | 'DEGRADED'
+    | 'OFFLINE'
+    | 'NEVER_SEEN'
+    | 'UNKNOWN',
+): string {
+  const labels = {
+    ONLINE: 'Online',
+    DEGRADED: 'Degraded',
+    OFFLINE: 'Offline',
+    NEVER_SEEN: 'Never seen',
+    UNKNOWN: 'Unknown',
+  } as const;
+
+  return labels[state];
+}
+
 function EquipmentIcon({ type }: { type: DeviceType }) {
   if (type === 'CAMERA') {
     return <Camera size={18} />;
@@ -192,6 +211,15 @@ export default function SiteDetailsPanel({
   const siteMonitoredDevices = useMemo(
     () =>
       overview?.fleet.filter(
+        (item) =>
+          item.device.siteId === selectedSiteId,
+      ) ?? [],
+    [overview, selectedSiteId],
+  );
+
+  const siteGatewayManagedDevices = useMemo(
+    () =>
+      overview?.gatewayManaged.filter(
         (item) =>
           item.device.siteId === selectedSiteId,
       ) ?? [],
@@ -440,6 +468,12 @@ export default function SiteDetailsPanel({
                           item.device.id === device.id,
                       );
 
+                      const derivedDevice =
+                        siteGatewayManagedDevices.find(
+                          (item) =>
+                            item.device.id === device.id,
+                        );
+
                       const canOpenDetails =
                         device.deviceType === 'CAMERA' ||
                         (
@@ -511,7 +545,20 @@ export default function SiteDetailsPanel({
                           </div>
 
                           {device.monitoringMode ===
-                          'VIA_GATEWAY' ? (
+                          'VIA_GATEWAY' &&
+                          derivedDevice ? (
+                            <span
+                              className={`badge badge--${derivedDevice.gateway.connectivity.state.toLowerCase()}`}
+                              title="Gateway status only. Individual device status is not verified."
+                            >
+                              Gateway{' '}
+                              {connectivityLabel(
+                                derivedDevice.gateway
+                                  .connectivity.state,
+                              )}
+                            </span>
+                          ) : device.monitoringMode ===
+                            'VIA_GATEWAY' ? (
                             <span className="inventory-status">
                               VIA GATEWAY
                             </span>

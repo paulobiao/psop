@@ -139,6 +139,7 @@ export class AlertRepository {
 
   async resolveConnectivityAlert(
     deviceId: string,
+    connectivityState = 'ONLINE',
   ): Promise<AlertWithDevice | null> {
     const alert = await this.prisma.alert.findFirst({
       where: {
@@ -158,7 +159,7 @@ export class AlertRepository {
       },
       data: {
         status: 'RESOLVED',
-        connectivityState: 'ONLINE',
+        connectivityState,
         dedupKey: null,
         resolvedAt: new Date(),
         lastDetectedAt: new Date(),
