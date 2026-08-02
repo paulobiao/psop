@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 USER_AGENT = f"PSOP-Edge-Gateway/{VERSION}"
 
 @dataclass(frozen=True)
@@ -291,12 +291,41 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
     while not stop:
-        cycle = gateway.run_cycle()
-        print_cycle(cycle, args.json)
+        try:
+            cycle = gateway.run_cycle()
+            print_cycle(cycle, args.json)
+        except Exception as error:
+            print(
+                f"[{now_iso()}] Gateway cycle failed: "
+                f"{type(error).__name__}: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+            if args.once or args.diagnose:
+                return 4
+
+            cycle = None
+
         if args.once or args.diagnose:
-            return 0 if cycle["state"] != "OFFLINE" else 3
-        deadline = time.monotonic() + config.interval_seconds
-        while not stop and time.monotonic() < deadline:
+            if cycle is None:
+                return 4
+
+            return (
+                0
+                if cycle["state"] != "OFFLINE"
+                else 3
+            )
+
+        deadline = (
+            time.monotonic()
+            + config.interval_seconds
+        )
+
+        while (
+            not stop
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.25)
     print("Gateway stopped")
     return 0
