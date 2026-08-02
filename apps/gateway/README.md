@@ -38,3 +38,24 @@ bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json
 ```
 
 When no required probe succeeds, the gateway withholds the camera heartbeat. PSOP then marks the camera OFFLINE through its existing heartbeat policy instead of receiving a false fresh heartbeat from the gateway.
+
+## Reliable macOS service
+
+The gateway can run as a macOS LaunchAgent, so an open terminal is not required.
+
+```bash
+python3 apps/gateway/install_macos_service.py doctor
+python3 apps/gateway/install_macos_service.py install
+python3 apps/gateway/install_macos_service.py status
+python3 apps/gateway/install_macos_service.py logs --lines 80
+```
+
+After changing local configuration or rotating the device key:
+
+```bash
+python3 apps/gateway/install_macos_service.py restart
+```
+
+The secret remains in `.env.local`; it is never written to the launchd plist. Logs and the SQLite pending buffer remain under the ignored `apps/gateway/state/` directory.
+
+See `docs/GATEWAY_RUNTIME_RELIABILITY.md`.
