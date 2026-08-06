@@ -14,11 +14,14 @@ export class OperationsOverviewService {
   ) {}
 
   async getOverview(organizationId: string) {
+    const generatedAt = new Date();
+
     const [
       fleet,
       inventory,
       activeAlerts,
       recentEvents,
+      recentIncidents,
     ] = await Promise.all([
       this.telemetryService.findFleet(organizationId),
       this.deviceService.findAll(organizationId),
@@ -26,6 +29,10 @@ export class OperationsOverviewService {
       this.connectivityEventsService.findRecent(
         20,
         organizationId,
+      ),
+      this.alertService.findRecentConnectivityIncidents(
+        organizationId,
+        50,
       ),
     ]);
 
@@ -119,7 +126,7 @@ export class OperationsOverviewService {
     );
 
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: generatedAt.toISOString(),
       summary: {
         sites: siteIds.size,
         cameras: fleet.summary.total,
@@ -153,6 +160,40 @@ export class OperationsOverviewService {
         lastDetectedAt: alert.lastDetectedAt,
       })),
       recentEvents,
+      recentIncidents: recentIncidents.map((alert) => {
+        const endedAt = alert.resolvedAt;
+        const durationEnd = endedAt ?? generatedAt;
+
+        return {
+          id: alert.id,
+          deviceId: alert.deviceId,
+          deviceName: alert.device.name,
+          externalId: alert.device.externalId,
+          deviceType: alert.device.deviceType,
+          siteId: alert.device.site.id,
+          siteCode: alert.device.site.code,
+          siteName: alert.device.site.name,
+          status: alert.status,
+          severity: alert.severity,
+          title: alert.title,
+          message: alert.message,
+          terminalConnectivityState:
+            alert.connectivityState,
+          monitoringSource: 'DIRECT' as const,
+          startedAt: alert.openedAt,
+          endedAt,
+          lastDetectedAt: alert.lastDetectedAt,
+          durationSeconds: Math.max(
+            0,
+            Math.floor(
+              (
+                durationEnd.getTime() -
+                alert.openedAt.getTime()
+              ) / 1000,
+            ),
+          ),
+        };
+      }),
     };
   }
 }

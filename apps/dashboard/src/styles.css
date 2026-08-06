@@ -4700,3 +4700,331 @@ tbody tr:hover {
     justify-self: start;
   }
 }
+
+/* Operational incident history */
+
+.incident-history-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(2, 8, 18, 0.8);
+  backdrop-filter: blur(7px);
+}
+
+.incident-history-modal {
+  width: min(1320px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #0d1727;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.48);
+}
+
+.incident-history-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 26px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 23, 39, 0.96);
+  backdrop-filter: blur(18px);
+}
+
+.incident-history-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.incident-history-title__icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.incident-history-header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: "Manrope", sans-serif;
+  font-size: 25px;
+}
+
+.incident-history-header p {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.incident-history-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.incident-history-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 22px 4px;
+}
+
+.incident-history-summary article {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.incident-history-summary span,
+.incident-history-summary strong {
+  display: block;
+}
+
+.incident-history-summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.incident-history-summary strong {
+  margin-top: 7px;
+  color: var(--text-strong);
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+}
+
+.incident-summary-open strong {
+  color: var(--danger);
+}
+
+.incident-summary-resolved strong {
+  color: var(--success);
+}
+
+.incident-history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.incident-filter-group {
+  display: flex;
+  gap: 7px;
+}
+
+.incident-filter {
+  min-height: 37px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.incident-filter:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.incident-filter--active {
+  border-color: rgba(77, 163, 255, 0.45);
+  color: #ddecff;
+  background: var(--accent-soft);
+}
+
+.incident-search {
+  display: flex;
+  width: min(380px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: #0b1423;
+}
+
+.incident-search:focus-within {
+  border-color: rgba(77, 163, 255, 0.6);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.incident-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.incident-history-generated {
+  padding: 12px 22px 0;
+  color: #718198;
+  font-size: 11px;
+}
+
+.incident-history-list {
+  display: grid;
+  gap: 12px;
+  padding: 18px 22px 24px;
+}
+
+.operational-incident {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 15px;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.operational-incident__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+}
+
+.operational-incident__icon--critical {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.operational-incident__icon--warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.operational-incident__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.operational-incident__heading strong,
+.operational-incident__heading small {
+  display: block;
+}
+
+.operational-incident__heading strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.operational-incident__heading small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.operational-incident p {
+  margin: 9px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.operational-incident__meta,
+.operational-incident__time {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px;
+  color: #718198;
+  font-size: 11px;
+}
+
+.operational-incident__time {
+  margin-top: 10px;
+}
+
+.operational-incident__time span,
+.operational-incident__time strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.operational-incident__time strong {
+  color: var(--text);
+}
+
+.incident-status {
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.incident-status--open {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.incident-status--resolved {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+@media (max-width: 800px) {
+  .incident-history-overlay {
+    padding: 0;
+  }
+
+  .incident-history-modal {
+    min-height: 100vh;
+    max-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .incident-history-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .incident-history-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .incident-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .incident-history-header {
+    padding: 19px 16px;
+  }
+
+  .incident-history-title__icon {
+    display: none;
+  }
+
+  .incident-history-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-incident__heading {
+    flex-direction: column;
+  }
+}

@@ -39,23 +39,35 @@ bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json
 
 When no required probe succeeds, the gateway withholds the camera heartbeat. PSOP then marks the camera OFFLINE through its existing heartbeat policy instead of receiving a false fresh heartbeat from the gateway.
 
-## Reliable macOS service
+## Manual operation policy
 
-The gateway can run as a macOS LaunchAgent, so an open terminal is not required.
+The gateway runs only when an operator starts it for a test or demonstration. It does not install a macOS service, start at login, or continue after the terminal process is stopped.
 
-```bash
-python3 apps/gateway/install_macos_service.py doctor
-python3 apps/gateway/install_macos_service.py install
-python3 apps/gateway/install_macos_service.py status
-python3 apps/gateway/install_macos_service.py logs --lines 80
-```
-
-After changing local configuration or rotating the device key:
+Diagnose the local target:
 
 ```bash
-python3 apps/gateway/install_macos_service.py restart
+python3 apps/gateway/psop_gateway.py \
+  --config apps/gateway/gateway.local.json \
+  --diagnose
 ```
 
-The secret remains in `.env.local`; it is never written to the launchd plist. Logs and the SQLite pending buffer remain under the ignored `apps/gateway/state/` directory.
+Run one monitoring cycle:
 
-See `docs/GATEWAY_RUNTIME_RELIABILITY.md`.
+```bash
+bash apps/gateway/run_gateway.sh \
+  --config apps/gateway/gateway.local.json \
+  --once
+```
+
+Run continuously during a test:
+
+```bash
+bash apps/gateway/run_gateway.sh \
+  --config apps/gateway/gateway.local.json
+```
+
+Stop continuous execution with `Control + C`.
+
+The SQLite buffer remains available during manual execution. If the PSOP API is temporarily unavailable, the latest eligible heartbeat is buffered and delivered after the API returns while the gateway process is still running.
+
+See `docs/GATEWAY_MANUAL_OPERATION.md`.

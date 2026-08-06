@@ -46,6 +46,19 @@ export class AlertService {
     });
   }
 
+  async findRecentConnectivityIncidents(
+    organizationId: string,
+    limit = 50,
+    deviceId?: string,
+  ) {
+    return this.alertRepository
+      .findRecentConnectivityIncidents({
+        organizationId,
+        limit,
+        deviceId,
+      });
+  }
+
   async findOne(
     organizationId: string,
     id: string,

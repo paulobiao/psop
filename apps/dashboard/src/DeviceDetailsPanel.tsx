@@ -142,6 +142,25 @@ function EventEntry({ event }: { event: ConnectivityEvent }) {
   );
 }
 
+function alertDuration(alert: DeviceAlert): string {
+  const startedAt = new Date(
+    alert.openedAt,
+  ).getTime();
+
+  const endedAt = alert.resolvedAt
+    ? new Date(alert.resolvedAt).getTime()
+    : Date.now();
+
+  const seconds = Math.max(
+    0,
+    Math.floor(
+      (endedAt - startedAt) / 1000,
+    ),
+  );
+
+  return formatDuration(seconds);
+}
+
 function AlertEntry({ alert }: { alert: DeviceAlert }) {
   return (
     <article className="details-alert">
@@ -168,6 +187,7 @@ function AlertEntry({ alert }: { alert: DeviceAlert }) {
           {alert.resolvedAt
             ? ` · Resolved ${formatDate(alert.resolvedAt)}`
             : ""}
+          {` · Duration ${alertDuration(alert)}`}
         </small>
       </div>
     </article>

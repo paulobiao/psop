@@ -12,3 +12,7 @@ For equipment configured with `VIA_GATEWAY`:
 The operations overview exposes `gatewayManaged` records separately from the directly monitored `fleet`. Each record includes the managed device, its gateway, the gateway connectivity snapshot and `individualVerification: NOT_VERIFIED`.
 
 This is intentionally conservative for closed ecosystems where the central gateway is reachable but individual camera telemetry is unavailable.
+
+## Incident boundary
+
+Gateway-managed child equipment does not receive individual connectivity incidents from the gateway heartbeat. Only the directly monitored gateway receives a connectivity history because child streaming, recording and device health remain unverified.

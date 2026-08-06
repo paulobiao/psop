@@ -15,11 +15,9 @@
     "test:integration": "bash scripts/test-security-integration.sh",
     "check:full": "pnpm run check && pnpm run test:integration",
     "test:gateway": "python3 -m unittest discover -s apps/gateway/tests -p 'test_*.py' -v",
-    "gateway:doctor": "python3 apps/gateway/install_macos_service.py doctor",
-    "gateway:install": "python3 apps/gateway/install_macos_service.py install",
-    "gateway:status": "python3 apps/gateway/install_macos_service.py status",
-    "gateway:restart": "python3 apps/gateway/install_macos_service.py restart",
-    "gateway:logs": "python3 apps/gateway/install_macos_service.py logs --lines 80"
+    "gateway:diagnose": "python3 apps/gateway/psop_gateway.py --config apps/gateway/gateway.local.json --diagnose",
+    "gateway:once": "bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json --once",
+    "gateway:run": "bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json"
   },
   "keywords": [],
   "author": "",

@@ -95,6 +95,42 @@ export class AlertRepository {
     });
   }
 
+  async findRecentConnectivityIncidents(input: {
+    organizationId: string;
+    limit?: number;
+    deviceId?: string;
+  }): Promise<AlertWithDevice[]> {
+    const limit = Math.min(
+      Math.max(input.limit ?? 50, 1),
+      100,
+    );
+
+    return this.prisma.alert.findMany({
+      where: {
+        type: 'DEVICE_CONNECTIVITY',
+        deviceId: input.deviceId,
+        device: {
+          deletedAt: null,
+          site: {
+            organizationId: input.organizationId,
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        device: {
+          include: {
+            site: true,
+          },
+        },
+      },
+      orderBy: {
+        openedAt: 'desc',
+      },
+      take: limit,
+    });
+  }
+
   async openConnectivityAlert(
     input: OpenConnectivityAlertInput,
   ): Promise<AlertWithDevice> {
