@@ -34,6 +34,7 @@ import {
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
+import IncidentHistoryPanel from './IncidentHistoryPanel';
 import SiteDetailsPanel from './SiteDetailsPanel';
 import UserManagementPanel from './UserManagementPanel';
 import AuditLogPanel from './AuditLogPanel';
@@ -384,6 +385,8 @@ function App() {
     useState(false);
   const [alertManagementOpen, setAlertManagementOpen] =
     useState(false);
+  const [incidentHistoryOpen, setIncidentHistoryOpen] =
+    useState(false);
   const [userManagementOpen, setUserManagementOpen] =
     useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
@@ -644,6 +647,15 @@ function App() {
           >
             <Boxes size={17} />
             Inventory
+          </button>
+
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() => setIncidentHistoryOpen(true)}
+          >
+            <History size={17} />
+            Incidents
           </button>
 
           <button
@@ -1144,6 +1156,18 @@ function App() {
             setSiteDetailsOpen(false);
             setSelectedDeviceId(deviceId);
           }}
+        />
+      )}
+
+      {incidentHistoryOpen && overview && (
+        <IncidentHistoryPanel
+          incidents={overview.recentIncidents ?? []}
+          generatedAt={overview.generatedAt}
+          refreshing={refreshing}
+          onRefresh={() => void loadOverview(true)}
+          onClose={() =>
+            setIncidentHistoryOpen(false)
+          }
         />
       )}
 

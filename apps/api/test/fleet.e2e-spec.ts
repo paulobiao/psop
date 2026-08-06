@@ -997,6 +997,42 @@ describe(
             'ONLINE',
           ]),
         );
+
+        const overview =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/operations/overview`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        const incident =
+          overview.body.recentIncidents.find(
+            (item: {
+              deviceId: string;
+            }) =>
+              item.deviceId ===
+              localDeviceId,
+          );
+
+        expect(incident).toBeDefined();
+        expect(incident.status).toBe(
+          'RESOLVED',
+        );
+        expect(
+          incident.monitoringSource,
+        ).toBe('DIRECT');
+        expect(
+          incident.durationSeconds,
+        ).toBeGreaterThanOrEqual(0);
+        expect(
+          incident.startedAt,
+        ).toBeDefined();
+        expect(
+          incident.endedAt,
+        ).toBeDefined();
       },
     );
 

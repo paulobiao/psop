@@ -128,6 +128,27 @@ export interface ConnectivityEvent {
   age_seconds: number | null;
 }
 
+export interface OperationalIncident {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  externalId: string;
+  deviceType: DeviceType;
+  siteId: string;
+  siteCode: string;
+  siteName: string;
+  status: "OPEN" | "RESOLVED";
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  terminalConnectivityState: string | null;
+  monitoringSource: "DIRECT";
+  startedAt: string;
+  endedAt: string | null;
+  lastDetectedAt: string;
+  durationSeconds: number;
+}
+
 export interface OperationsOverview {
   generatedAt: string;
   summary: OperationsSummary;
@@ -135,6 +156,7 @@ export interface OperationsOverview {
   gatewayManaged: GatewayManagedDevice[];
   activeAlerts: ActiveAlert[];
   recentEvents: ConnectivityEvent[];
+  recentIncidents: OperationalIncident[];
 }
 
 export interface DeviceConnectivityEventsResponse {
