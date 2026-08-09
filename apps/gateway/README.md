@@ -10,6 +10,7 @@ The gateway monitors a camera, DVR, or NVR on the local network and sends authen
 - last-write-wins SQLite buffering while the API is unavailable
 - one-shot diagnosis or continuous operation
 - no third-party Python dependencies
+- operational runtime metadata reported to PSOP after successful API delivery
 
 ## Configure
 
@@ -38,6 +39,14 @@ bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json
 ```
 
 When no required probe succeeds, the gateway withholds the camera heartbeat. PSOP then marks the camera OFFLINE through its existing heartbeat policy instead of receiving a false fresh heartbeat from the gateway.
+
+## Operational telemetry
+
+Each eligible heartbeat includes edge-agent version, runtime start/uptime, pending-buffer count and the previous local delivery result. The API records a successful delivery snapshot and keeps the last delivery error for operational evidence.
+
+The dashboard treats aged runtime reports as stale; it does not infer that the gateway is currently running when no fresh report has arrived.
+
+See `docs/GATEWAY_OPERATIONAL_TELEMETRY.md`.
 
 ## Manual operation policy
 

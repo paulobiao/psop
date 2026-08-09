@@ -14,6 +14,7 @@ import {
   verifyDeviceIngestionKey,
 } from '../security/device-ingestion-key.js';
 import { DeviceConnectivityEventsService } from './device-connectivity-events.service.js';
+import { EdgeAgentRuntimeService } from './edge-agent-runtime.service.js';
 import { DeviceTelemetryService } from './device-telemetry.service.js';
 import { LocalTelemetryService } from './local-telemetry.service.js';
 
@@ -24,6 +25,7 @@ export class DeviceTelemetryIngestionService {
     private readonly deviceRepository: DeviceRepository,
     private readonly localTelemetry: LocalTelemetryService,
     private readonly connectivityEvents: DeviceConnectivityEventsService,
+    private readonly edgeAgentRuntime: EdgeAgentRuntimeService,
     private readonly telemetry: DeviceTelemetryService,
   ) {}
 
@@ -128,6 +130,8 @@ export class DeviceTelemetryIngestionService {
 
     const nowSeconds = Math.floor(Date.now() / 1000);
 
+    this.edgeAgentRuntime.validateInput(input);
+
     if (input.timestamp > nowSeconds + 300) {
       throw new BadRequestException(
         'Telemetry timestamp is too far in the future',
@@ -160,6 +164,11 @@ export class DeviceTelemetryIngestionService {
     }
 
     await this.localTelemetry.upsertSnapshot(device.id, input);
+
+    await this.edgeAgentRuntime.recordSuccessfulDelivery(
+      device.id,
+      input,
+    );
 
     await this.connectivityEvents.evaluateFleet(device.site.organizationId);
 

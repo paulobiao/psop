@@ -39,6 +39,12 @@ During manual execution, the gateway stores the latest eligible heartbeat in the
 
 The buffer, configuration and device secret stay under ignored local paths and must not be committed.
 
+## Operational telemetry
+
+While the gateway is manually running, successful heartbeats also report edge-agent runtime metadata to PSOP. The dashboard can show the last runtime report, version, uptime, buffer count, delivery history and last delivery error.
+
+See `docs/GATEWAY_OPERATIONAL_TELEMETRY.md`.
+
 ## Operational boundary
 
 Stopping the gateway intentionally ends local monitoring. The dashboard then retains the last known telemetry until the normal heartbeat-expiration policy marks the directly monitored gateway offline.

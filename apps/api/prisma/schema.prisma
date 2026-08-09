@@ -55,6 +55,12 @@ enum DeviceMonitoringMode {
   INVENTORY_ONLY
 }
 
+enum EdgeAgentDeliveryState {
+  DELIVERED
+  BUFFERED
+  ERROR
+}
+
 model Organization {
   id             String             @id @default(uuid()) @db.Uuid
   name           String
@@ -142,6 +148,7 @@ model Device {
   alerts                    Alert[]
   ingestionCredential       DeviceIngestionCredential?
   telemetrySnapshot         DeviceTelemetrySnapshot?
+  edgeAgentRuntime          EdgeAgentRuntimeSnapshot?
   connectivityEvents        DeviceConnectivityEvent[]
 
   @@unique([siteId, externalId])
@@ -181,6 +188,27 @@ model DeviceTelemetrySnapshot {
 
   @@index([observedAt])
   @@map("device_telemetry_snapshots")
+}
+
+model EdgeAgentRuntimeSnapshot {
+  deviceId                 String                  @id @map("device_id") @db.Uuid
+  device                   Device                  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  agentVersion             String                  @map("agent_version")
+  runtimeStartedAt         DateTime                @map("runtime_started_at")
+  uptimeSeconds            Int                     @map("uptime_seconds")
+  deliveryState            EdgeAgentDeliveryState  @default(DELIVERED) @map("delivery_state")
+  previousDeliveryState    EdgeAgentDeliveryState? @map("previous_delivery_state")
+  pendingBufferCount       Int                     @default(0) @map("pending_buffer_count")
+  lastSuccessfulDeliveryAt DateTime?               @map("last_successful_delivery_at")
+  lastDeliveryError        String?                 @map("last_delivery_error")
+  lastDeliveryErrorAt      DateTime?               @map("last_delivery_error_at")
+  reportedAt               DateTime                @default(now()) @map("reported_at")
+  createdAt                DateTime                @default(now()) @map("created_at")
+  updatedAt                DateTime                @updatedAt @map("updated_at")
+
+  @@index([reportedAt])
+  @@index([deliveryState])
+  @@map("edge_agent_runtime_snapshots")
 }
 
 model DeviceConnectivityEvent {

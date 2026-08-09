@@ -5,6 +5,7 @@ import { TelemetryIngestionController } from './controllers/telemetry-ingestion.
 import { DeviceRepository } from './repositories/device.repository.js';
 import { DeviceConnectivityEventsService } from './services/device-connectivity-events.service.js';
 import { DeviceConnectivityMonitorService } from './services/device-connectivity-monitor.service.js';
+import { EdgeAgentRuntimeService } from './services/edge-agent-runtime.service.js';
 import { DeviceHealthService } from './services/device-health.service.js';
 import { DeviceTelemetryIngestionService } from './services/device-telemetry-ingestion.service.js';
 import { DeviceTelemetryService } from './services/device-telemetry.service.js';
@@ -24,6 +25,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
     DeviceConnectivityEventsService,
     DeviceConnectivityMonitorService,
     DeviceHealthService,
+    EdgeAgentRuntimeService,
     TelemetryDemoService,
     LocalTelemetryService,
     DeviceTelemetryIngestionService,
@@ -33,6 +35,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
     DeviceService,
     DeviceTelemetryService,
     DeviceConnectivityEventsService,
+    EdgeAgentRuntimeService,
     TelemetryDemoService,
     LocalTelemetryService,
   ],

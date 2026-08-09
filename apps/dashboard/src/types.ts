@@ -149,11 +149,66 @@ export interface OperationalIncident {
   durationSeconds: number;
 }
 
+export interface EdgeAgentRuntime {
+  device: {
+    id: string;
+    name: string;
+    externalId: string;
+    deviceType: DeviceType;
+    siteId: string;
+    siteCode: string;
+    siteName: string;
+  };
+  runtime: {
+    agentVersion: string;
+    runtimeStartedAt: string;
+    uptimeSeconds: number;
+    deliveryState:
+      | "DELIVERED"
+      | "BUFFERED"
+      | "ERROR";
+    previousDeliveryState:
+      | "DELIVERED"
+      | "BUFFERED"
+      | "ERROR"
+      | null;
+    pendingBufferCount: number;
+    lastSuccessfulDeliveryAt:
+      | string
+      | null;
+    lastDeliveryError: string | null;
+    lastDeliveryErrorAt: string | null;
+  };
+  report: {
+    receivedAt: string;
+    ageSeconds: number;
+    freshness: "REPORTING" | "STALE";
+  };
+  connectivity: FleetDevice["connectivity"] | null;
+}
+
+export interface IncidentAnalytics {
+  activeCount: number;
+  recoveredCount: number;
+  recoveredLast24h: number;
+  meanRecoverySeconds: number | null;
+  longestRecentIncidentSeconds:
+    | number
+    | null;
+  longestRecentIncidentId:
+    | string
+    | null;
+  recoverySampleCount: number;
+  recoveryWindowDays: number;
+}
+
 export interface OperationsOverview {
   generatedAt: string;
   summary: OperationsSummary;
   fleet: FleetDevice[];
   gatewayManaged: GatewayManagedDevice[];
+  edgeAgents: EdgeAgentRuntime[];
+  incidentAnalytics: IncidentAnalytics;
   activeAlerts: ActiveAlert[];
   recentEvents: ConnectivityEvent[];
   recentIncidents: OperationalIncident[];

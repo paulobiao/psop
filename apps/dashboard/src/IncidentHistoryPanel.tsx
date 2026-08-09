@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import type {
+  IncidentAnalytics,
   OperationalIncident,
 } from "./types";
 
@@ -23,6 +24,7 @@ type IncidentFilter =
 
 interface IncidentHistoryPanelProps {
   incidents: OperationalIncident[];
+  analytics: IncidentAnalytics;
   generatedAt: string;
   refreshing: boolean;
   onRefresh: () => void;
@@ -71,6 +73,7 @@ function formatDuration(seconds: number): string {
 
 export default function IncidentHistoryPanel({
   incidents,
+  analytics,
   generatedAt,
   refreshing,
   onRefresh,
@@ -127,18 +130,8 @@ export default function IncidentHistoryPanel({
     });
   }, [filter, incidents, search]);
 
-  const openCount = incidents.filter(
-    (incident) => incident.status === "OPEN",
-  ).length;
-
-  const resolvedCount =
-    incidents.length - openCount;
-
-  const totalDuration = incidents.reduce(
-    (total, incident) =>
-      total + incident.durationSeconds,
-    0,
-  );
+  const openCount = analytics.activeCount;
+  const resolvedCount = analytics.recoveredCount;
 
   return (
     <div
@@ -202,11 +195,7 @@ export default function IncidentHistoryPanel({
           </div>
         </header>
 
-        <section className="incident-history-summary">
-          <article>
-            <span>Total incidents</span>
-            <strong>{incidents.length}</strong>
-          </article>
+        <section className="incident-history-summary incident-history-summary--analytics">
           <article className="incident-summary-open">
             <span>Ongoing</span>
             <strong>{openCount}</strong>
@@ -216,10 +205,33 @@ export default function IncidentHistoryPanel({
             <strong>{resolvedCount}</strong>
           </article>
           <article>
-            <span>Recorded duration</span>
+            <span>Recovered 24h</span>
+            <strong>{analytics.recoveredLast24h}</strong>
+          </article>
+          <article>
+            <span>Mean recovery</span>
             <strong>
-              {formatDuration(totalDuration)}
+              {analytics.meanRecoverySeconds === null
+                ? "—"
+                : formatDuration(analytics.meanRecoverySeconds)}
             </strong>
+            <small>
+              {analytics.recoverySampleCount} incidents · {analytics.recoveryWindowDays}d window
+            </small>
+          </article>
+          <article>
+            <span>Longest recent</span>
+            <strong>
+              {analytics.longestRecentIncidentSeconds === null
+                ? "—"
+                : formatDuration(analytics.longestRecentIncidentSeconds)}
+            </strong>
+            <small>Last {analytics.recoveryWindowDays} days</small>
+          </article>
+          <article>
+            <span>Loaded history</span>
+            <strong>{incidents.length}</strong>
+            <small>Most recent incidents</small>
           </article>
         </section>
 

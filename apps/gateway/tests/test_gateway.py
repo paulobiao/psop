@@ -121,5 +121,44 @@ class Tests(unittest.TestCase):
             self.assertEqual(cycle["delivery"], "BUFFERED")
             self.assertEqual(store.load("d1")["status"], "online")
 
+    def test_store_pending_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = PendingStore(Path(directory) / "pending.db")
+            self.assertEqual(store.count(), 0)
+            store.save("d1", {"status": "online"})
+            self.assertEqual(store.count(), 1)
+            self.assertEqual(store.count("d1"), 1)
+            store.delete("d1")
+            self.assertEqual(store.count("d1"), 0)
+
+    def test_gateway_payload_contains_runtime_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = PendingStore(Path(directory) / "pending.db")
+            config = GatewayConfig(
+                "http://127.0.0.1/api/v1",
+                "d1",
+                "EDGE-001",
+                30,
+                1,
+                "Edge",
+                None,
+                Path(directory) / "pending.db",
+                (ProbeConfig("edge", "tcp", "127.0.0.1", 80),),
+            )
+            gateway = EdgeGateway(config, None, store)
+            gateway.record_delivery_failure(
+                RuntimeError("temporary outage"),
+                "BUFFERED",
+            )
+            payload = gateway.build_payload("ONLINE", pending_buffer_count=1)
+
+            self.assertEqual(payload["agentVersion"], "1.2.0")
+            self.assertEqual(payload["previousDeliveryState"], "BUFFERED")
+            self.assertEqual(payload["pendingBufferCount"], 1)
+            self.assertIn("runtimeStartedAt", payload)
+            self.assertIn("runtimeUptimeSeconds", payload)
+            self.assertEqual(payload["lastDeliveryError"], "temporary outage")
+            self.assertIn("lastDeliveryErrorAt", payload)
+
 if __name__ == "__main__":
     unittest.main()

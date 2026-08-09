@@ -1033,6 +1033,23 @@ describe(
         expect(
           incident.endedAt,
         ).toBeDefined();
+
+        expect(
+          overview.body.incidentAnalytics,
+        ).toMatchObject({
+          activeCount:
+            expect.any(Number),
+          recoveredCount:
+            expect.any(Number),
+          recoveredLast24h:
+            expect.any(Number),
+          recoveryWindowDays: 30,
+        });
+
+        expect(
+          overview.body.incidentAnalytics
+            .recoveredCount,
+        ).toBeGreaterThanOrEqual(1);
       },
     );
 

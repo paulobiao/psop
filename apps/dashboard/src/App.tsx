@@ -34,6 +34,7 @@ import {
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
+import GatewayOperationsPanel from './GatewayOperationsPanel';
 import IncidentHistoryPanel from './IncidentHistoryPanel';
 import SiteDetailsPanel from './SiteDetailsPanel';
 import UserManagementPanel from './UserManagementPanel';
@@ -387,6 +388,8 @@ function App() {
     useState(false);
   const [incidentHistoryOpen, setIncidentHistoryOpen] =
     useState(false);
+  const [gatewayOperationsOpen, setGatewayOperationsOpen] =
+    useState(false);
   const [userManagementOpen, setUserManagementOpen] =
     useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
@@ -647,6 +650,15 @@ function App() {
           >
             <Boxes size={17} />
             Inventory
+          </button>
+
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() => setGatewayOperationsOpen(true)}
+          >
+            <Network size={17} />
+            Agents
           </button>
 
           <button
@@ -1159,9 +1171,22 @@ function App() {
         />
       )}
 
+      {gatewayOperationsOpen && overview && (
+        <GatewayOperationsPanel
+          agents={overview.edgeAgents ?? []}
+          generatedAt={overview.generatedAt}
+          refreshing={refreshing}
+          onRefresh={() => void loadOverview(true)}
+          onClose={() =>
+            setGatewayOperationsOpen(false)
+          }
+        />
+      )}
+
       {incidentHistoryOpen && overview && (
         <IncidentHistoryPanel
           incidents={overview.recentIncidents ?? []}
+          analytics={overview.incidentAnalytics}
           generatedAt={overview.generatedAt}
           refreshing={refreshing}
           onRefresh={() => void loadOverview(true)}
