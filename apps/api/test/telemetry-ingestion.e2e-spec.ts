@@ -263,6 +263,18 @@ describe('PSOP local telemetry ingestion', () => {
       },
     });
 
+    await prisma.edgeAgentRuntimeSnapshot.deleteMany({
+      where: {
+        device: {
+          site: {
+            organizationId: {
+              in: organizationIds,
+            },
+          },
+        },
+      },
+    });
+
     await prisma.deviceTelemetrySnapshot.deleteMany({
       where: {
         device: {
@@ -458,6 +470,25 @@ describe('PSOP local telemetry ingestion', () => {
         telemetryPayload({
           model: 'Local Edge Gateway',
           firmware: 'gateway-1.0.0',
+          agentVersion: '1.2.0',
+          runtimeStartedAt:
+            new Date(
+              Date.now() - 5000,
+            ).toISOString(),
+          runtimeUptimeSeconds: 5,
+          previousDeliveryState:
+            'BUFFERED',
+          pendingBufferCount: 1,
+          lastSuccessfulDeliveryAt:
+            new Date(
+              Date.now() - 60000,
+            ).toISOString(),
+          lastDeliveryError:
+            'temporary API outage',
+          lastDeliveryErrorAt:
+            new Date(
+              Date.now() - 30000,
+            ).toISOString(),
         }),
       )
       .expect(201);
@@ -504,6 +535,42 @@ describe('PSOP local telemetry ingestion', () => {
             'GATEWAY',
       ),
     ).toBe(true);
+
+    const overview = await request(
+      app.getHttpServer(),
+    )
+      .get(`${API}/operations/overview`)
+      .set(bearer(adminToken))
+      .expect(200);
+
+    const edgeAgent =
+      overview.body.edgeAgents.find(
+        (agent: {
+          device: { id: string };
+        }) =>
+          agent.device.id ===
+          gatewayDeviceId,
+      );
+
+    expect(edgeAgent).toBeDefined();
+    expect(
+      edgeAgent.runtime.agentVersion,
+    ).toBe('1.2.0');
+    expect(
+      edgeAgent.runtime.deliveryState,
+    ).toBe('DELIVERED');
+    expect(
+      edgeAgent.runtime.previousDeliveryState,
+    ).toBe('BUFFERED');
+    expect(
+      edgeAgent.runtime.pendingBufferCount,
+    ).toBe(1);
+    expect(
+      edgeAgent.runtime.lastDeliveryError,
+    ).toBe('temporary API outage');
+    expect(
+      edgeAgent.report.freshness,
+    ).toBe('REPORTING');
   });
 
   it('rejects missing, invalid and cross-device credentials', async () => {

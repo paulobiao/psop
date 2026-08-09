@@ -59,6 +59,17 @@ export class AlertService {
       });
   }
 
+  async getConnectivityIncidentAnalytics(
+    organizationId: string,
+    now = new Date(),
+  ) {
+    return this.alertRepository
+      .getConnectivityIncidentAnalytics(
+        organizationId,
+        now,
+      );
+  }
+
   async findOne(
     organizationId: string,
     id: string,

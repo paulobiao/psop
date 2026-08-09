@@ -131,6 +131,135 @@ export class AlertRepository {
     });
   }
 
+  async getConnectivityIncidentAnalytics(
+    organizationId: string,
+    now = new Date(),
+  ) {
+    const dayAgo = new Date(
+      now.getTime() - 24 * 60 * 60 * 1000,
+    );
+
+    const recentWindowDays = 30;
+    const recentSince = new Date(
+      now.getTime() -
+        recentWindowDays * 24 * 60 * 60 * 1000,
+    );
+
+    const tenantWhere = {
+      type: 'DEVICE_CONNECTIVITY' as const,
+      device: {
+        deletedAt: null,
+        site: {
+          organizationId,
+          deletedAt: null,
+        },
+      },
+    };
+
+    const [
+      activeCount,
+      recoveredCount,
+      recoveredLast24h,
+      recentResolved,
+    ] = await Promise.all([
+      this.prisma.alert.count({
+        where: {
+          ...tenantWhere,
+          status: 'OPEN',
+        },
+      }),
+      this.prisma.alert.count({
+        where: {
+          ...tenantWhere,
+          status: 'RESOLVED',
+        },
+      }),
+      this.prisma.alert.count({
+        where: {
+          ...tenantWhere,
+          status: 'RESOLVED',
+          resolvedAt: {
+            gte: dayAgo,
+          },
+        },
+      }),
+      this.prisma.alert.findMany({
+        where: {
+          ...tenantWhere,
+          status: 'RESOLVED',
+          resolvedAt: {
+            gte: recentSince,
+          },
+        },
+        select: {
+          id: true,
+          openedAt: true,
+          resolvedAt: true,
+        },
+      }),
+    ]);
+
+    const durations = recentResolved.flatMap(
+      (incident) => {
+        if (!incident.resolvedAt) {
+          return [];
+        }
+
+        return [
+          {
+            id: incident.id,
+            seconds: Math.max(
+              0,
+              Math.floor(
+                (
+                  incident.resolvedAt.getTime() -
+                  incident.openedAt.getTime()
+                ) / 1000,
+              ),
+            ),
+          },
+        ];
+      },
+    );
+
+    const totalSeconds = durations.reduce(
+      (sum, incident) =>
+        sum + incident.seconds,
+      0,
+    );
+
+    const longest = durations.reduce<
+      { id: string; seconds: number } | null
+    >(
+      (current, incident) =>
+        !current ||
+        incident.seconds > current.seconds
+          ? incident
+          : current,
+      null,
+    );
+
+    return {
+      activeCount,
+      recoveredCount,
+      recoveredLast24h,
+      meanRecoverySeconds:
+        durations.length > 0
+          ? Math.round(
+              totalSeconds / durations.length,
+            )
+          : null,
+      longestRecentIncidentSeconds:
+        longest?.seconds ?? null,
+      longestRecentIncidentId:
+        longest?.id ?? null,
+      recoverySampleCount:
+        durations.length,
+      recoveryWindowDays:
+        recentWindowDays,
+    };
+  }
+
   async openConnectivityAlert(
     input: OpenConnectivityAlertInput,
   ): Promise<AlertWithDevice> {

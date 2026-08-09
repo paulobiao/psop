@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AlertService } from '../../alert/services/alert.service.js';
 import { DeviceConnectivityEventsService } from '../../device/services/device-connectivity-events.service.js';
+import { EdgeAgentRuntimeService } from '../../device/services/edge-agent-runtime.service.js';
 import { DeviceTelemetryService } from '../../device/services/device-telemetry.service.js';
 import { DeviceService } from '../../device/services/device.service.js';
 
@@ -11,6 +12,7 @@ export class OperationsOverviewService {
     private readonly deviceService: DeviceService,
     private readonly alertService: AlertService,
     private readonly connectivityEventsService: DeviceConnectivityEventsService,
+    private readonly edgeAgentRuntimeService: EdgeAgentRuntimeService,
   ) {}
 
   async getOverview(organizationId: string) {
@@ -22,6 +24,8 @@ export class OperationsOverviewService {
       activeAlerts,
       recentEvents,
       recentIncidents,
+      incidentAnalytics,
+      edgeAgentRuntimes,
     ] = await Promise.all([
       this.telemetryService.findFleet(organizationId),
       this.deviceService.findAll(organizationId),
@@ -33,6 +37,13 @@ export class OperationsOverviewService {
       this.alertService.findRecentConnectivityIncidents(
         organizationId,
         50,
+      ),
+      this.alertService.getConnectivityIncidentAnalytics(
+        organizationId,
+        generatedAt,
+      ),
+      this.edgeAgentRuntimeService.findByOrganization(
+        organizationId,
       ),
     ]);
 
@@ -91,10 +102,8 @@ export class OperationsOverviewService {
             device: {
               id: device.id,
               name: device.name,
-              externalId:
-                device.externalId,
-              deviceType:
-                device.deviceType,
+              externalId: device.externalId,
+              deviceType: device.deviceType,
               administrativeStatus:
                 device.status,
               siteId:
@@ -113,15 +122,85 @@ export class OperationsOverviewService {
             gateway: {
               id: gateway.id,
               name: gateway.name,
-              externalId:
-                gateway.externalId,
-              deviceType:
-                gateway.deviceType,
+              externalId: gateway.externalId,
+              deviceType: gateway.deviceType,
               connectivity:
                 gatewaySnapshot.connectivity,
             },
           },
         ];
+      },
+    );
+
+    const edgeAgents = edgeAgentRuntimes.map(
+      (runtime) => {
+        const reportAgeSeconds = Math.max(
+          0,
+          Math.floor(
+            (
+              generatedAt.getTime() -
+              runtime.reportedAt.getTime()
+            ) / 1000,
+          ),
+        );
+
+        const freshAfterSeconds = Math.max(
+          1,
+          runtime.device
+            .expectedHeartbeatInterval,
+        ) * 2;
+
+        const fleetSnapshot =
+          fleetByDeviceId.get(runtime.deviceId);
+
+        return {
+          device: {
+            id: runtime.device.id,
+            name: runtime.device.name,
+            externalId:
+              runtime.device.externalId,
+            deviceType:
+              runtime.device.deviceType,
+            siteId:
+              runtime.device.siteId,
+            siteCode:
+              runtime.device.site.code,
+            siteName:
+              runtime.device.site.name,
+          },
+          runtime: {
+            agentVersion:
+              runtime.agentVersion,
+            runtimeStartedAt:
+              runtime.runtimeStartedAt,
+            uptimeSeconds:
+              runtime.uptimeSeconds,
+            deliveryState:
+              runtime.deliveryState,
+            previousDeliveryState:
+              runtime.previousDeliveryState,
+            pendingBufferCount:
+              runtime.pendingBufferCount,
+            lastSuccessfulDeliveryAt:
+              runtime.lastSuccessfulDeliveryAt,
+            lastDeliveryError:
+              runtime.lastDeliveryError,
+            lastDeliveryErrorAt:
+              runtime.lastDeliveryErrorAt,
+          },
+          report: {
+            receivedAt:
+              runtime.reportedAt,
+            ageSeconds:
+              reportAgeSeconds,
+            freshness:
+              reportAgeSeconds <= freshAfterSeconds
+                ? 'REPORTING'
+                : 'STALE',
+          },
+          connectivity:
+            fleetSnapshot?.connectivity ?? null,
+        };
       },
     );
 
@@ -143,6 +222,8 @@ export class OperationsOverviewService {
       },
       fleet: fleet.devices,
       gatewayManaged,
+      edgeAgents,
+      incidentAnalytics,
       activeAlerts: activeAlerts.map((alert) => ({
         id: alert.id,
         deviceId: alert.deviceId,
@@ -155,7 +236,8 @@ export class OperationsOverviewService {
         severity: alert.severity,
         title: alert.title,
         message: alert.message,
-        connectivityState: alert.connectivityState,
+        connectivityState:
+          alert.connectivityState,
         openedAt: alert.openedAt,
         lastDetectedAt: alert.lastDetectedAt,
       })),
