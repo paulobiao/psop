@@ -1,5 +1,6 @@
 import {
   KeyRound,
+  BellRing,
   History,
   Users,
   Activity,
@@ -34,6 +35,7 @@ import {
 import DeviceDetailsPanel from './DeviceDetailsPanel';
 import InventoryPanel from './InventoryPanel';
 import AlertManagementPanel from './AlertManagementPanel';
+import NotificationSettingsPanel from './NotificationSettingsPanel';
 import GatewayOperationsPanel from './GatewayOperationsPanel';
 import IncidentHistoryPanel from './IncidentHistoryPanel';
 import SiteDetailsPanel from './SiteDetailsPanel';
@@ -392,6 +394,8 @@ function App() {
     useState(false);
   const [userManagementOpen, setUserManagementOpen] =
     useState(false);
+  const [notificationSettingsOpen, setNotificationSettingsOpen] =
+    useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [sessionManagementOpen, setSessionManagementOpen] = useState(false);
   const [siteDetailsOpen, setSiteDetailsOpen] =
@@ -634,6 +638,20 @@ function App() {
               Users
             </button>
           )}
+
+          {authUser.role === 'ADMIN' && (
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() =>
+                setNotificationSettingsOpen(true)
+              }
+            >
+              <BellRing size={17} />
+              Notifications
+            </button>
+          )}
+
           <button
             className="refresh-button"
             type="button"
@@ -1157,6 +1175,14 @@ function App() {
           currentUserId={authUser.id}
           onClose={() =>
             setUserManagementOpen(false)
+          }
+        />
+      )}
+
+      {notificationSettingsOpen && (
+        <NotificationSettingsPanel
+          onClose={() =>
+            setNotificationSettingsOpen(false)
           }
         />
       )}

@@ -90,6 +90,14 @@ describe(
         'us-east-1';
       process.env.TELEMETRY_DEMO_MODE =
         'true';
+      process.env.NOTIFICATION_WORKER_ENABLED =
+        'false';
+      delete process.env.SMTP_HOST;
+      delete process.env.SMTP_PORT;
+      delete process.env.SMTP_SECURE;
+      delete process.env.SMTP_USER;
+      delete process.env.SMTP_PASSWORD;
+      delete process.env.SMTP_FROM;
 
       const moduleRef =
         await Test
@@ -272,6 +280,18 @@ describe(
       });
 
       await prisma.authChallenge.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.notificationDelivery.deleteMany({
+        where: {
+          organizationId: filter,
+        },
+      });
+
+      await prisma.notificationPolicy.deleteMany({
         where: {
           organizationId: filter,
         },
@@ -845,6 +865,48 @@ describe(
         const token =
           await login(adminAEmail);
 
+        const policy =
+          await request(
+            app.getHttpServer(),
+          )
+            .patch(
+              `${API}/notifications/policy`,
+            )
+            .set(bearer(token))
+            .send({
+              enabled: true,
+              minimumSeverity:
+                'WARNING',
+              notifyOnRecovery:
+                true,
+              notifyAdmins: true,
+              notifyOperators:
+                false,
+              explicitEmails: [],
+              cooldownMinutes: 0,
+              escalationDelayMinutes:
+                0,
+            })
+            .expect(200);
+
+        expect(
+          policy.body.enabled,
+        ).toBe(true);
+
+        const transport =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/notifications/transport`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          transport.body.configured,
+        ).toBe(false);
+
         const status =
           await request(
             app.getHttpServer(),
@@ -921,6 +983,50 @@ describe(
                 'DEGRADED',
           ),
         ).toBe(true);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .post(
+            `${API}/devices/telemetry/evaluate`,
+          )
+          .set(bearer(token))
+          .expect(201);
+
+        const openDeliveries =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/notifications/deliveries?limit=200`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        const localOpenDeliveries =
+          openDeliveries.body.filter(
+            (delivery: {
+              eventType: string;
+              device: {
+                id: string;
+              };
+            }) =>
+              delivery.eventType ===
+                'INCIDENT_OPENED' &&
+              delivery.device.id ===
+                localDeviceId,
+          );
+
+        expect(
+          localOpenDeliveries,
+        ).toHaveLength(1);
+
+        expect(
+          localOpenDeliveries[0]
+            .status,
+        ).toBe(
+          'SKIPPED_NOT_CONFIGURED',
+        );
 
         const online =
           await request(
@@ -1050,6 +1156,57 @@ describe(
           overview.body.incidentAnalytics
             .recoveredCount,
         ).toBeGreaterThanOrEqual(1);
+
+        const deliveries =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/notifications/deliveries?limit=200`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        const localDeliveries =
+          deliveries.body.filter(
+            (delivery: {
+              device: {
+                id: string;
+              };
+            }) =>
+              delivery.device.id ===
+              localDeviceId,
+          );
+
+        expect(
+          localDeliveries.filter(
+            (delivery: {
+              eventType: string;
+            }) =>
+              delivery.eventType ===
+              'INCIDENT_OPENED',
+          ),
+        ).toHaveLength(1);
+
+        expect(
+          localDeliveries.filter(
+            (delivery: {
+              eventType: string;
+            }) =>
+              delivery.eventType ===
+              'INCIDENT_RECOVERED',
+          ),
+        ).toHaveLength(1);
+
+        expect(
+          localDeliveries.every(
+            (delivery: {
+              status: string;
+            }) =>
+              delivery.status ===
+              'SKIPPED_NOT_CONFIGURED',
+          ),
+        ).toBe(true);
       },
     );
 
@@ -1058,6 +1215,31 @@ describe(
       async () => {
         const viewerToken =
           await login(viewerAEmail);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .get(
+            `${API}/notifications/policy`,
+          )
+          .set(
+            bearer(viewerToken),
+          )
+          .expect(403);
+
+        await request(
+          app.getHttpServer(),
+        )
+          .patch(
+            `${API}/notifications/policy`,
+          )
+          .set(
+            bearer(viewerToken),
+          )
+          .send({
+            enabled: false,
+          })
+          .expect(403);
 
         await request(
           app.getHttpServer(),
@@ -1125,6 +1307,71 @@ describe(
               localDeviceId,
           ),
         ).toBe(true);
+
+        const foreignAlert =
+          await prisma.alert.create({
+            data: {
+              deviceId:
+                foreignDeviceId,
+              type:
+                'DEVICE_CONNECTIVITY',
+              severity:
+                'CRITICAL',
+              title:
+                'Foreign incident',
+              message:
+                'Foreign tenant incident',
+              connectivityState:
+                'OFFLINE',
+            },
+          });
+
+        await prisma
+          .notificationDelivery
+          .create({
+            data: {
+              organizationId:
+                organizationBId,
+              alertId:
+                foreignAlert.id,
+              eventType:
+                'INCIDENT_OPENED',
+              recipientEmail:
+                `foreign-${runId}@psop.test`,
+              recipientSource:
+                'EXPLICIT',
+              status:
+                'SKIPPED_NOT_CONFIGURED',
+              dedupKey:
+                `foreign-${runId}`,
+              subject:
+                'Foreign notification',
+              body:
+                'Foreign notification',
+              lastError:
+                'SMTP transport is not configured',
+            },
+          });
+
+        const deliveries =
+          await request(
+            app.getHttpServer(),
+          )
+            .get(
+              `${API}/notifications/deliveries?limit=200`,
+            )
+            .set(bearer(token))
+            .expect(200);
+
+        expect(
+          deliveries.body.some(
+            (delivery: {
+              alertId: string;
+            }) =>
+              delivery.alertId ===
+              foreignAlert.id,
+          ),
+        ).toBe(false);
       },
     );
   },

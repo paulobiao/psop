@@ -8,6 +8,10 @@ import type {
   OperationsOverview,
   Site,
   TelemetryDemoState,
+  NotificationDelivery,
+  NotificationPolicy,
+  NotificationTransportStatus,
+  UpdateNotificationPolicyInput,
 } from "./types";
 import type {
   DeviceIngestionKeyStatus,
@@ -614,4 +618,69 @@ export function regenerateMfaRecoveryCodes(
       code,
     }),
   });
+}
+
+export function getNotificationPolicy(
+  signal?: AbortSignal,
+): Promise<NotificationPolicy> {
+  return requestJson<NotificationPolicy>(
+    "/notifications/policy",
+    {},
+    signal,
+  );
+}
+
+export function updateNotificationPolicy(
+  input: UpdateNotificationPolicyInput,
+): Promise<NotificationPolicy> {
+  return requestJson<NotificationPolicy>(
+    "/notifications/policy",
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getNotificationTransportStatus(
+  signal?: AbortSignal,
+): Promise<NotificationTransportStatus> {
+  return requestJson<NotificationTransportStatus>(
+    "/notifications/transport",
+    {},
+    signal,
+  );
+}
+
+export function getNotificationDeliveries(
+  limit = 100,
+  signal?: AbortSignal,
+): Promise<NotificationDelivery[]> {
+  return requestJson<NotificationDelivery[]>(
+    `/notifications/deliveries?limit=${limit}`,
+    {},
+    signal,
+  );
+}
+
+export function processNotificationDeliveries(): Promise<{
+  processed: number;
+}> {
+  return requestJson(
+    "/notifications/deliveries/process",
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function retryNotificationDelivery(
+  deliveryId: string,
+): Promise<NotificationDelivery> {
+  return requestJson<NotificationDelivery>(
+    `/notifications/deliveries/${deliveryId}/retry`,
+    {
+      method: "POST",
+    },
+  );
 }

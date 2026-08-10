@@ -323,3 +323,87 @@ export interface CreateDeviceInput {
   status?: "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "DECOMMISSIONED";
   expectedHeartbeatInterval?: number;
 }
+
+export interface NotificationPolicy {
+  id: string | null;
+  organizationId: string;
+  enabled: boolean;
+  minimumSeverity: AlertSeverity;
+  notifyOnRecovery: boolean;
+  notifyAdmins: boolean;
+  notifyOperators: boolean;
+  explicitEmails: string[];
+  cooldownMinutes: number;
+  escalationDelayMinutes: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface NotificationTransportStatus {
+  channel: "EMAIL";
+  configured: boolean;
+  hostConfigured: boolean;
+  fromConfigured: boolean;
+  authentication:
+    | "AUTHENTICATED"
+    | "NONE"
+    | "INCOMPLETE";
+  secure: boolean;
+  port: number;
+}
+
+export type NotificationDeliveryStatus =
+  | "PENDING"
+  | "SENT"
+  | "FAILED"
+  | "SKIPPED_NOT_CONFIGURED"
+  | "SKIPPED_COOLDOWN"
+  | "SKIPPED_POLICY";
+
+export interface NotificationDelivery {
+  id: string;
+  alertId: string;
+  eventType:
+    | "INCIDENT_OPENED"
+    | "INCIDENT_RECOVERED";
+  channel: "EMAIL";
+  recipientEmail: string;
+  recipientSource: string;
+  status: NotificationDeliveryStatus;
+  subject: string;
+  eligibleAt: string;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  nextAttemptAt: string | null;
+  sentAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  incident: {
+    id: string;
+    severity: AlertSeverity;
+    status: "OPEN" | "RESOLVED";
+    connectivityState: string | null;
+    openedAt: string;
+    resolvedAt: string | null;
+  };
+  device: {
+    id: string;
+    name: string;
+    externalId: string;
+    siteId: string;
+    siteCode: string;
+    siteName: string;
+  };
+}
+
+export interface UpdateNotificationPolicyInput {
+  enabled?: boolean;
+  minimumSeverity?: AlertSeverity;
+  notifyOnRecovery?: boolean;
+  notifyAdmins?: boolean;
+  notifyOperators?: boolean;
+  explicitEmails?: string[];
+  cooldownMinutes?: number;
+  escalationDelayMinutes?: number;
+}

@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type {
   AlertSeverity,
   AlertStatus,
 } from '../../../../generated/prisma/client.js';
+import { NotificationService } from '../../notification/services/notification.service.js';
 import { AlertRepository } from '../repositories/alert.repository.js';
 
 interface ConnectivityAlertInput {
@@ -19,8 +21,16 @@ interface ConnectivityAlertInput {
 
 @Injectable()
 export class AlertService {
+  private readonly logger =
+    new Logger(
+      AlertService.name,
+    );
+
   constructor(
-    private readonly alertRepository: AlertRepository,
+    private readonly alertRepository:
+      AlertRepository,
+    private readonly notificationService:
+      NotificationService,
   ) {}
 
   async findAll(
@@ -74,13 +84,17 @@ export class AlertService {
     organizationId: string,
     id: string,
   ) {
-    const alert = await this.alertRepository.findById(
-      id,
-      organizationId,
-    );
+    const alert =
+      await this.alertRepository
+        .findById(
+          id,
+          organizationId,
+        );
 
     if (!alert) {
-      throw new NotFoundException('Alert not found');
+      throw new NotFoundException(
+        'Alert not found',
+      );
     }
 
     return alert;
@@ -90,22 +104,40 @@ export class AlertService {
     organizationId: string,
     id: string,
   ) {
-    const alert = await this.findOne(
-      organizationId,
-      id,
-    );
+    const alert =
+      await this.findOne(
+        organizationId,
+        id,
+      );
 
-    if (alert.status === 'RESOLVED') {
+    if (
+      alert.status ===
+      'RESOLVED'
+    ) {
       return alert;
     }
 
-    return this.alertRepository.resolveById(id);
+    const resolved =
+      await this.alertRepository
+        .resolveById(id);
+
+    await this.safeNotification(
+      () =>
+        this.notificationService
+          .handleIncidentRecovered(
+            resolved,
+          ),
+    );
+
+    return resolved;
   }
 
   async openConnectivityAlert(
-    input: ConnectivityAlertInput,
+    input:
+      ConnectivityAlertInput,
   ) {
-    const severity: AlertSeverity =
+    const severity:
+      AlertSeverity =
       input.state === 'OFFLINE'
         ? 'CRITICAL'
         : 'WARNING';
@@ -121,23 +153,65 @@ export class AlertService {
       `${input.deviceName} at site ${input.siteCode} ` +
       `has connectivity state ${input.state}.`;
 
-    return this.alertRepository.openConnectivityAlert({
-      deviceId: input.deviceId,
-      severity,
-      title,
-      message,
-      connectivityState: input.state,
-    });
+    const alert =
+      await this.alertRepository
+        .openConnectivityAlert({
+          deviceId:
+            input.deviceId,
+          severity,
+          title,
+          message,
+          connectivityState:
+            input.state,
+        });
+
+    await this.safeNotification(
+      () =>
+        this.notificationService
+          .handleIncidentOpened(
+            alert,
+          ),
+    );
+
+    return alert;
   }
 
   async resolveConnectivityAlert(
     deviceId: string,
-    connectivityState = 'ONLINE',
+    connectivityState =
+      'ONLINE',
   ) {
-    return this.alertRepository.resolveConnectivityAlert(
-      deviceId,
-      connectivityState,
-    );
+    const alert =
+      await this.alertRepository
+        .resolveConnectivityAlert(
+          deviceId,
+          connectivityState,
+        );
+
+    if (alert) {
+      await this.safeNotification(
+        () =>
+          this.notificationService
+            .handleIncidentRecovered(
+              alert,
+            ),
+      );
+    }
+
+    return alert;
+  }
+
+  private async safeNotification(
+    operation:
+      () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await operation();
+    } catch {
+      this.logger.warn(
+        'Incident notification processing failed without interrupting alert state',
+      );
+    }
   }
 
   private parseStatus(
@@ -147,7 +221,10 @@ export class AlertService {
       return undefined;
     }
 
-    if (status !== 'OPEN' && status !== 'RESOLVED') {
+    if (
+      status !== 'OPEN' &&
+      status !== 'RESOLVED'
+    ) {
       throw new BadRequestException(
         'Alert status must be OPEN or RESOLVED',
       );
