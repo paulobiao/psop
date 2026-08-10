@@ -73,7 +73,9 @@ model Organization {
   updatedAt      DateTime           @updatedAt @map("updated_at")
   deletedAt      DateTime?          @map("deleted_at")
   sessions       UserSession[]
-  authChallenges AuthChallenge[]
+  authChallenges        AuthChallenge[]
+  notificationPolicy    NotificationPolicy?
+  notificationDeliveries NotificationDelivery[]
 
   @@map("organizations")
 }
@@ -243,6 +245,24 @@ enum AlertSeverity {
   CRITICAL
 }
 
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationEventType {
+  INCIDENT_OPENED
+  INCIDENT_RECOVERED
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_NOT_CONFIGURED
+  SKIPPED_COOLDOWN
+  SKIPPED_POLICY
+}
+
 model Alert {
   id                String        @id @default(uuid()) @db.Uuid
   deviceId          String        @map("device_id") @db.Uuid
@@ -259,10 +279,59 @@ model Alert {
   resolvedAt        DateTime?     @map("resolved_at")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
+  notificationDeliveries NotificationDelivery[]
 
   @@index([deviceId, status])
   @@index([status, createdAt])
   @@map("alerts")
+}
+
+model NotificationPolicy {
+  id                     String        @id @default(uuid()) @db.Uuid
+  organizationId         String        @unique @map("organization_id") @db.Uuid
+  organization           Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  enabled                Boolean       @default(false)
+  minimumSeverity        AlertSeverity @default(CRITICAL) @map("minimum_severity")
+  notifyOnRecovery       Boolean       @default(true) @map("notify_on_recovery")
+  notifyAdmins           Boolean       @default(true) @map("notify_admins")
+  notifyOperators        Boolean       @default(true) @map("notify_operators")
+  explicitEmails         String[]      @default([]) @map("explicit_emails")
+  cooldownMinutes        Int           @default(0) @map("cooldown_minutes")
+  escalationDelayMinutes Int           @default(0) @map("escalation_delay_minutes")
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+
+  @@map("notification_policies")
+}
+
+model NotificationDelivery {
+  id             String                     @id @default(uuid()) @db.Uuid
+  organizationId String                     @map("organization_id") @db.Uuid
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  alertId        String                     @map("alert_id") @db.Uuid
+  alert          Alert                      @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  eventType      NotificationEventType      @map("event_type")
+  channel        NotificationChannel        @default(EMAIL)
+  recipientEmail String                     @map("recipient_email")
+  recipientSource String                    @map("recipient_source")
+  status         NotificationDeliveryStatus @default(PENDING)
+  dedupKey       String                     @unique @map("dedup_key")
+  subject        String
+  body           String
+  eligibleAt     DateTime                   @default(now()) @map("eligible_at")
+  attemptCount   Int                        @default(0) @map("attempt_count")
+  lastAttemptAt  DateTime?                  @map("last_attempt_at")
+  nextAttemptAt  DateTime?                  @map("next_attempt_at")
+  sentAt         DateTime?                  @map("sent_at")
+  lastError      String?                    @map("last_error")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+  updatedAt      DateTime                   @updatedAt @map("updated_at")
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status, eligibleAt])
+  @@index([alertId, eventType])
+  @@index([recipientEmail, sentAt])
+  @@map("notification_deliveries")
 }
 
 model AuditLog {
