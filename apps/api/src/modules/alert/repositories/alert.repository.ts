@@ -267,13 +267,28 @@ export class AlertRepository {
     const dedupKey =
       `${input.deviceId}:DEVICE_CONNECTIVITY`;
 
+    const existing =
+      await this.prisma.alert.findUnique({
+        where: {
+          dedupKey,
+        },
+        select: {
+          severity: true,
+        },
+      });
+
+    const peakSeverity: AlertSeverity =
+      existing?.severity === 'CRITICAL'
+        ? 'CRITICAL'
+        : input.severity;
+
     return this.prisma.alert.upsert({
       where: {
         dedupKey,
       },
       update: {
         status: 'OPEN',
-        severity: input.severity,
+        severity: peakSeverity,
         title: input.title,
         message: input.message,
         connectivityState: input.connectivityState,

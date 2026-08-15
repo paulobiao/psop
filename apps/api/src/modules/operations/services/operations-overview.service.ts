@@ -97,6 +97,16 @@ export class OperationsOverviewService {
           return [];
         }
 
+        const deviceSnapshot =
+          fleetByDeviceId.get(
+            device.id,
+          );
+
+        const recorderVerified =
+          deviceSnapshot?.monitoring
+            .individualVerification ===
+          'RECORDER_VERIFIED';
+
         return [
           {
             device: {
@@ -113,12 +123,29 @@ export class OperationsOverviewService {
               siteName:
                 gatewaySnapshot.device.siteName,
             },
-            monitoring: {
-              source:
-                'GATEWAY_DERIVED' as const,
-              individualVerification:
-                'NOT_VERIFIED' as const,
-            },
+            monitoring: recorderVerified
+              ? {
+                  source:
+                    'RECORDER_OBSERVED' as const,
+                  individualVerification:
+                    'RECORDER_VERIFIED' as const,
+                }
+              : {
+                  source:
+                    'GATEWAY_DERIVED' as const,
+                  individualVerification:
+                    'NOT_VERIFIED' as const,
+                },
+            connectivity:
+              recorderVerified
+                ? deviceSnapshot?.connectivity ??
+                  null
+                : null,
+            telemetry:
+              recorderVerified
+                ? deviceSnapshot?.telemetry ??
+                  null
+                : null,
             gateway: {
               id: gateway.id,
               name: gateway.name,
@@ -261,7 +288,11 @@ export class OperationsOverviewService {
           message: alert.message,
           terminalConnectivityState:
             alert.connectivityState,
-          monitoringSource: 'DIRECT' as const,
+          monitoringSource:
+            alert.device.monitoringMode ===
+            'VIA_GATEWAY'
+              ? 'VIA_GATEWAY' as const
+              : 'DIRECT' as const,
           startedAt: alert.openedAt,
           endedAt,
           lastDetectedAt: alert.lastDetectedAt,

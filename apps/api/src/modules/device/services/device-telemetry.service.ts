@@ -22,6 +22,7 @@ import {
 } from './device-health.service.js';
 import { TelemetryDemoService } from './telemetry-demo.service.js';
 import { LocalTelemetryService } from './local-telemetry.service.js';
+import { RecorderObservationService } from './recorder-observation.service.js';
 
 type TelemetryItem = Record<string, unknown>;
 
@@ -37,6 +38,7 @@ export class DeviceTelemetryService {
     private readonly deviceHealthService: DeviceHealthService,
     private readonly telemetryDemoService: TelemetryDemoService,
     private readonly localTelemetryService: LocalTelemetryService,
+    private readonly recorderObservationService: RecorderObservationService,
   ) {
     const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
 
@@ -55,17 +57,27 @@ export class DeviceTelemetryService {
   async findFleet(organizationId?: string) {
     const devices =
       await this.deviceRepository
-        .findAllTelemetryDevicesWithSite(
+        .findAllObservableDevicesWithSite(
           organizationId,
         );
 
-    let items: TelemetryItem[];
+    const directDevices = devices.filter(
+      (device) =>
+        device.monitoringMode === 'DIRECT',
+    );
+
+    const recorderObservedDevices = devices.filter(
+      (device) =>
+        device.monitoringMode === 'VIA_GATEWAY',
+    );
+
+    let directItems: TelemetryItem[];
 
     if (
       this.telemetryDemoService
         .isEnabled()
     ) {
-      items = devices
+      directItems = directDevices
         .map((device) =>
           this.telemetryDemoService
             .getItem(device),
@@ -79,13 +91,13 @@ export class DeviceTelemetryService {
     } else if (
       this.localTelemetryService.isEnabled()
     ) {
-      items =
+      directItems =
         await this.localTelemetryService
-          .findFleetItems(devices);
+          .findFleetItems(directDevices);
     } else {
       try {
-        items = await this.readFleetItems(
-          devices.map((device) => ({
+        directItems = await this.readFleetItems(
+          directDevices.map((device) => ({
             site_id: device.siteId,
             camera_id: device.id,
           })),
@@ -95,8 +107,19 @@ export class DeviceTelemetryService {
       }
     }
 
+    const recorderItems =
+      await this.recorderObservationService
+        .findFleetItems(
+          recorderObservedDevices,
+        );
+
+    const items = [
+      ...directItems!,
+      ...recorderItems,
+    ];
+
     const telemetryByDevice = new Map(
-      items!.map((item) => [
+      items.map((item) => [
         this.telemetryKey(
           this.toString(item.site_id),
           this.toString(item.camera_id),
@@ -105,12 +128,21 @@ export class DeviceTelemetryService {
       ]),
     );
 
-    const fleet = devices.map((device) => {
+    const fleet = devices.flatMap((device) => {
       const item = telemetryByDevice.get(
         this.telemetryKey(device.siteId, device.id),
       );
 
-      return this.buildResponse(device, item);
+      if (
+        device.monitoringMode === 'VIA_GATEWAY' &&
+        !item
+      ) {
+        return [];
+      }
+
+      return [
+        this.buildResponse(device, item),
+      ];
     });
 
     const counts: Record<ConnectivityState, number> = {
@@ -152,20 +184,30 @@ export class DeviceTelemetryService {
       throw new NotFoundException('Device not found');
     }
 
-    if (
-      device.monitoringMode !== 'DIRECT' ||
-      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+    const isDirect =
+      device.monitoringMode === 'DIRECT' &&
+      ['CAMERA', 'RECORDER', 'GATEWAY'].includes(
         device.deviceType,
-      )
-    ) {
+      );
+
+    const isRecorderObserved =
+      device.monitoringMode === 'VIA_GATEWAY' &&
+      device.deviceType === 'CAMERA' &&
+      Boolean(device.gatewayDeviceId);
+
+    if (!isDirect && !isRecorderObserved) {
       throw new BadRequestException(
-        'Telemetry is available only for directly monitored cameras, recorders and gateways',
+        'Telemetry is available only for directly monitored devices or recorder-observed cameras',
       );
     }
 
     let item: TelemetryItem | undefined;
 
-    if (
+    if (isRecorderObserved) {
+      item =
+        await this.recorderObservationService
+          .findItem(device);
+    } else if (
       this.telemetryDemoService
         .isEnabled()
     ) {
@@ -271,8 +313,17 @@ export class DeviceTelemetryService {
             device
               .expectedHeartbeatInterval,
           reportedStatus,
+          reportedOfflineIsAuthoritative:
+            device.monitoringMode === 'VIA_GATEWAY' &&
+            this.toString(
+              item?.individual_verification,
+            ) === 'RECORDER_VERIFIED',
           temperatureC,
           storageUsedPct,
+          staleTelemetryIsUnknown:
+            this.toString(
+              item?.observation_source,
+            ) === 'RECORDER',
         });
 
     return {
@@ -294,6 +345,27 @@ export class DeviceTelemetryService {
           device.site.code,
         siteName:
           device.site.name,
+      },
+      monitoring: {
+        source:
+          device.monitoringMode === 'DIRECT'
+            ? 'DIRECT'
+            : this.toString(item?.observation_source) ===
+                'RECORDER'
+              ? 'RECORDER_OBSERVED'
+              : 'GATEWAY_DERIVED',
+        individualVerification:
+          device.monitoringMode === 'DIRECT'
+            ? 'DIRECT'
+            : this.toString(
+                  item?.individual_verification,
+                ) === 'RECORDER_VERIFIED'
+              ? 'RECORDER_VERIFIED'
+              : 'NOT_VERIFIED',
+        observerDeviceId:
+          this.toString(
+            item?.observer_device_id,
+          ),
       },
       connectivity: {
         state: health.state,
@@ -333,6 +405,38 @@ export class DeviceTelemetryService {
             isoTime:
               this.toString(
                 item.iso_time,
+              ),
+            channelId:
+              this.toString(
+                item.channel_id,
+              ),
+            channelNumber:
+              this.toNumber(
+                item.channel_number,
+              ),
+            poePort:
+              this.toNumber(
+                item.poe_port,
+              ),
+            poePowerW:
+              this.toNumber(
+                item.poe_power_w,
+              ),
+            recordingStatus:
+              this.toString(
+                item.recording_status,
+              ),
+            protocol:
+              this.toString(
+                item.protocol,
+              ),
+            resolution:
+              this.toString(
+                item.resolution,
+              ),
+            frameRate:
+              this.toNumber(
+                item.frame_rate,
               ),
           }
         : null,

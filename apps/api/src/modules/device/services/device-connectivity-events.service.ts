@@ -143,7 +143,7 @@ export class DeviceConnectivityEventsService {
       ? new Set(
           (
             await this.deviceRepository
-              .findAllTelemetryDevicesWithSite(
+              .findAllObservableDevicesWithSite(
                 organizationId,
               )
           ).map((device) => device.id),
@@ -238,14 +238,22 @@ export class DeviceConnectivityEventsService {
       throw new NotFoundException('Device not found');
     }
 
-    if (
-      device.monitoringMode !== 'DIRECT' ||
-      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(
-        device.deviceType,
-      )
-    ) {
+    const individuallyObservable =
+      (
+        device.monitoringMode === 'DIRECT' &&
+        ['CAMERA', 'RECORDER', 'GATEWAY'].includes(
+          device.deviceType,
+        )
+      ) ||
+      (
+        device.monitoringMode === 'VIA_GATEWAY' &&
+        device.deviceType === 'CAMERA' &&
+        Boolean(device.gatewayDeviceId)
+      );
+
+    if (!individuallyObservable) {
       throw new BadRequestException(
-        'Connectivity events are available only for directly monitored cameras, recorders and gateways',
+        'Connectivity events are available only for directly monitored devices or recorder-observed cameras',
       );
     }
 

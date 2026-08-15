@@ -11,6 +11,7 @@ import { DeviceTelemetryIngestionService } from './services/device-telemetry-ing
 import { DeviceTelemetryService } from './services/device-telemetry.service.js';
 import { DeviceService } from './services/device.service.js';
 import { LocalTelemetryService } from './services/local-telemetry.service.js';
+import { RecorderObservationService } from './services/recorder-observation.service.js';
 import { TelemetryDemoService } from './services/telemetry-demo.service.js';
 
 @Module({
@@ -28,6 +29,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
     EdgeAgentRuntimeService,
     TelemetryDemoService,
     LocalTelemetryService,
+    RecorderObservationService,
     DeviceTelemetryIngestionService,
     DeviceRepository,
   ],
@@ -38,6 +40,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
     EdgeAgentRuntimeService,
     TelemetryDemoService,
     LocalTelemetryService,
+    RecorderObservationService,
   ],
 })
 export class DeviceModule {}

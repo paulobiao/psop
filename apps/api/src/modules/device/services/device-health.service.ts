@@ -12,7 +12,9 @@ export type DeviceHealthReason =
   | 'NO_TELEMETRY'
   | 'INVALID_TIMESTAMP'
   | 'HEARTBEAT_OVERDUE'
+  | 'STALE_OBSERVATION'
   | 'REPORTED_STATUS_NOT_HEALTHY'
+  | 'REPORTED_OFFLINE'
   | 'UNRECOGNIZED_REPORTED_STATUS'
   | 'HIGH_TEMPERATURE'
   | 'HIGH_STORAGE_USAGE';
@@ -22,6 +24,8 @@ export interface DeviceHealthInput {
   timestampSeconds: number | null;
   expectedHeartbeatIntervalSeconds: number;
   reportedStatus: string | null;
+  reportedOfflineIsAuthoritative?: boolean;
+  staleTelemetryIsUnknown?: boolean;
   temperatureC: number | null;
   storageUsedPct: number | null;
   nowSeconds?: number;
@@ -117,6 +121,16 @@ export class DeviceHealthService {
       ageSeconds >
       offlineAfterSeconds
     ) {
+      if (input.staleTelemetryIsUnknown) {
+        return {
+          state: 'UNKNOWN',
+          reasons: ['STALE_OBSERVATION'],
+          lastHeartbeatAt,
+          ageSeconds,
+          offlineAfterSeconds,
+        };
+      }
+
       return {
         state: 'OFFLINE',
         reasons: ['HEARTBEAT_OVERDUE'],
@@ -131,6 +145,19 @@ export class DeviceHealthService {
         ?.trim()
         .toLowerCase() ??
       null;
+
+    if (
+      normalizedStatus === 'offline' &&
+      input.reportedOfflineIsAuthoritative
+    ) {
+      return {
+        state: 'OFFLINE',
+        reasons: ['REPORTED_OFFLINE'],
+        lastHeartbeatAt,
+        ageSeconds,
+        offlineAfterSeconds,
+      };
+    }
 
     if (
       normalizedStatus &&

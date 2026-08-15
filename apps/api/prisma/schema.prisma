@@ -62,19 +62,19 @@ enum EdgeAgentDeliveryState {
 }
 
 model Organization {
-  id             String             @id @default(uuid()) @db.Uuid
-  name           String
-  slug           String             @unique
-  status         OrganizationStatus @default(ACTIVE)
-  sites          Site[]
-  users          User[]
-  auditLogs      AuditLog[]
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
-  deletedAt      DateTime?          @map("deleted_at")
-  sessions       UserSession[]
-  authChallenges        AuthChallenge[]
-  notificationPolicy    NotificationPolicy?
+  id                     String                 @id @default(uuid()) @db.Uuid
+  name                   String
+  slug                   String                 @unique
+  status                 OrganizationStatus     @default(ACTIVE)
+  sites                  Site[]
+  users                  User[]
+  auditLogs              AuditLog[]
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+  deletedAt              DateTime?              @map("deleted_at")
+  sessions               UserSession[]
+  authChallenges         AuthChallenge[]
+  notificationPolicy     NotificationPolicy?
   notificationDeliveries NotificationDelivery[]
 
   @@map("organizations")
@@ -127,29 +127,31 @@ model Site {
 }
 
 model Device {
-  id                        String                     @id @default(uuid()) @db.Uuid
-  siteId                    String                     @map("site_id") @db.Uuid
-  site                      Site                       @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  id                        String                        @id @default(uuid()) @db.Uuid
+  siteId                    String                        @map("site_id") @db.Uuid
+  site                      Site                          @relation(fields: [siteId], references: [id], onDelete: Restrict)
   name                      String
-  externalId                String                     @map("external_id")
-  deviceType                DeviceType                 @map("device_type")
-  monitoringMode            DeviceMonitoringMode       @default(DIRECT) @map("monitoring_mode")
-  gatewayDeviceId           String?                    @map("gateway_device_id") @db.Uuid
-  gatewayDevice             Device?                    @relation("DeviceGateway", fields: [gatewayDeviceId], references: [id], onDelete: Restrict)
-  managedDevices            Device[]                   @relation("DeviceGateway")
+  externalId                String                        @map("external_id")
+  deviceType                DeviceType                    @map("device_type")
+  monitoringMode            DeviceMonitoringMode          @default(DIRECT) @map("monitoring_mode")
+  gatewayDeviceId           String?                       @map("gateway_device_id") @db.Uuid
+  gatewayDevice             Device?                       @relation("DeviceGateway", fields: [gatewayDeviceId], references: [id], onDelete: Restrict)
+  managedDevices            Device[]                      @relation("DeviceGateway")
   manufacturer              String?
   model                     String?
-  firmwareVersion           String?                    @map("firmware_version")
-  ipAddress                 String?                    @map("ip_address")
-  serialNumber              String?                    @map("serial_number")
-  status                    DeviceStatus               @default(ACTIVE)
-  expectedHeartbeatInterval Int                        @default(60) @map("expected_heartbeat_interval")
-  createdAt                 DateTime                   @default(now()) @map("created_at")
-  updatedAt                 DateTime                   @updatedAt @map("updated_at")
-  deletedAt                 DateTime?                  @map("deleted_at")
+  firmwareVersion           String?                       @map("firmware_version")
+  ipAddress                 String?                       @map("ip_address")
+  serialNumber              String?                       @map("serial_number")
+  status                    DeviceStatus                  @default(ACTIVE)
+  expectedHeartbeatInterval Int                           @default(60) @map("expected_heartbeat_interval")
+  createdAt                 DateTime                      @default(now()) @map("created_at")
+  updatedAt                 DateTime                      @updatedAt @map("updated_at")
+  deletedAt                 DateTime?                     @map("deleted_at")
   alerts                    Alert[]
   ingestionCredential       DeviceIngestionCredential?
   telemetrySnapshot         DeviceTelemetrySnapshot?
+  recorderObservation       RecorderObservationSnapshot?  @relation("ObservedDevice")
+  recorderObservations      RecorderObservationSnapshot[] @relation("RecorderDevice")
   edgeAgentRuntime          EdgeAgentRuntimeSnapshot?
   connectivityEvents        DeviceConnectivityEvent[]
 
@@ -190,6 +192,33 @@ model DeviceTelemetrySnapshot {
 
   @@index([observedAt])
   @@map("device_telemetry_snapshots")
+}
+
+model RecorderObservationSnapshot {
+  deviceId         String   @id @map("device_id") @db.Uuid
+  device           Device   @relation("ObservedDevice", fields: [deviceId], references: [id], onDelete: Cascade)
+  recorderDeviceId String   @map("recorder_device_id") @db.Uuid
+  recorderDevice   Device   @relation("RecorderDevice", fields: [recorderDeviceId], references: [id], onDelete: Cascade)
+  observedAt       DateTime @map("observed_at")
+  receivedAt       DateTime @default(now()) @map("received_at")
+  reportedStatus   String   @map("reported_status")
+  channelId        String?  @map("channel_id")
+  channelNumber    Int?     @map("channel_number")
+  poePort          Int?     @map("poe_port")
+  poePowerW        Float?   @map("poe_power_w")
+  recordingStatus  String?  @map("recording_status")
+  protocol         String?
+  bitrateKbps      Int?     @map("bitrate_kbps")
+  resolution       String?
+  frameRate        Int?     @map("frame_rate")
+  model            String?
+  firmware         String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([recorderDeviceId])
+  @@index([observedAt])
+  @@map("recorder_observation_snapshots")
 }
 
 model EdgeAgentRuntimeSnapshot {
@@ -264,21 +293,21 @@ enum NotificationDeliveryStatus {
 }
 
 model Alert {
-  id                String        @id @default(uuid()) @db.Uuid
-  deviceId          String        @map("device_id") @db.Uuid
-  device            Device        @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  type              AlertType
-  status            AlertStatus   @default(OPEN)
-  severity          AlertSeverity
-  title             String
-  message           String
-  connectivityState String?       @map("connectivity_state")
-  dedupKey          String?       @unique @map("dedup_key")
-  openedAt          DateTime      @default(now()) @map("opened_at")
-  lastDetectedAt    DateTime      @default(now()) @map("last_detected_at")
-  resolvedAt        DateTime?     @map("resolved_at")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
+  id                     String                 @id @default(uuid()) @db.Uuid
+  deviceId               String                 @map("device_id") @db.Uuid
+  device                 Device                 @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  type                   AlertType
+  status                 AlertStatus            @default(OPEN)
+  severity               AlertSeverity
+  title                  String
+  message                String
+  connectivityState      String?                @map("connectivity_state")
+  dedupKey               String?                @unique @map("dedup_key")
+  openedAt               DateTime               @default(now()) @map("opened_at")
+  lastDetectedAt         DateTime               @default(now()) @map("last_detected_at")
+  resolvedAt             DateTime?              @map("resolved_at")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
   notificationDeliveries NotificationDelivery[]
 
   @@index([deviceId, status])
@@ -305,27 +334,27 @@ model NotificationPolicy {
 }
 
 model NotificationDelivery {
-  id             String                     @id @default(uuid()) @db.Uuid
-  organizationId String                     @map("organization_id") @db.Uuid
-  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  alertId        String                     @map("alert_id") @db.Uuid
-  alert          Alert                      @relation(fields: [alertId], references: [id], onDelete: Cascade)
-  eventType      NotificationEventType      @map("event_type")
-  channel        NotificationChannel        @default(EMAIL)
-  recipientEmail String                     @map("recipient_email")
-  recipientSource String                    @map("recipient_source")
-  status         NotificationDeliveryStatus @default(PENDING)
-  dedupKey       String                     @unique @map("dedup_key")
-  subject        String
-  body           String
-  eligibleAt     DateTime                   @default(now()) @map("eligible_at")
-  attemptCount   Int                        @default(0) @map("attempt_count")
-  lastAttemptAt  DateTime?                  @map("last_attempt_at")
-  nextAttemptAt  DateTime?                  @map("next_attempt_at")
-  sentAt         DateTime?                  @map("sent_at")
-  lastError      String?                    @map("last_error")
-  createdAt      DateTime                   @default(now()) @map("created_at")
-  updatedAt      DateTime                   @updatedAt @map("updated_at")
+  id              String                     @id @default(uuid()) @db.Uuid
+  organizationId  String                     @map("organization_id") @db.Uuid
+  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  alertId         String                     @map("alert_id") @db.Uuid
+  alert           Alert                      @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  eventType       NotificationEventType      @map("event_type")
+  channel         NotificationChannel        @default(EMAIL)
+  recipientEmail  String                     @map("recipient_email")
+  recipientSource String                     @map("recipient_source")
+  status          NotificationDeliveryStatus @default(PENDING)
+  dedupKey        String                     @unique @map("dedup_key")
+  subject         String
+  body            String
+  eligibleAt      DateTime                   @default(now()) @map("eligible_at")
+  attemptCount    Int                        @default(0) @map("attempt_count")
+  lastAttemptAt   DateTime?                  @map("last_attempt_at")
+  nextAttemptAt   DateTime?                  @map("next_attempt_at")
+  sentAt          DateTime?                  @map("sent_at")
+  lastError       String?                    @map("last_error")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
 
   @@index([organizationId, createdAt])
   @@index([organizationId, status, eligibleAt])

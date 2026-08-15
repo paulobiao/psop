@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import type { IngestDeviceTelemetryDto } from '../dto/ingest-device-telemetry.dto.js';
+import type { IngestRecorderObservationsDto } from '../dto/ingest-recorder-observations.dto.js';
 import { DeviceRepository } from '../repositories/device.repository.js';
 import {
   deviceIngestionKeyPrefix,
@@ -17,6 +18,7 @@ import { DeviceConnectivityEventsService } from './device-connectivity-events.se
 import { EdgeAgentRuntimeService } from './edge-agent-runtime.service.js';
 import { DeviceTelemetryService } from './device-telemetry.service.js';
 import { LocalTelemetryService } from './local-telemetry.service.js';
+import { RecorderObservationService } from './recorder-observation.service.js';
 
 @Injectable()
 export class DeviceTelemetryIngestionService {
@@ -27,6 +29,7 @@ export class DeviceTelemetryIngestionService {
     private readonly connectivityEvents: DeviceConnectivityEventsService,
     private readonly edgeAgentRuntime: EdgeAgentRuntimeService,
     private readonly telemetry: DeviceTelemetryService,
+    private readonly recorderObservations: RecorderObservationService,
   ) {}
 
   async getKeyStatus(organizationId: string, deviceId: string) {
@@ -174,4 +177,80 @@ export class DeviceTelemetryIngestionService {
 
     return this.telemetry.findByDeviceId(device.id, device.site.organizationId);
   }
+
+  async ingestRecorderObservations(
+    recorderDeviceId: string,
+    deviceKey: string,
+    input: IngestRecorderObservationsDto,
+  ) {
+    this.localTelemetry.assertEnabled();
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    if (input.timestamp > nowSeconds + 300) {
+      throw new BadRequestException(
+        'Telemetry timestamp is too far in the future',
+      );
+    }
+
+    const recorder =
+      await this.prisma.device.findFirst({
+        where: {
+          id: recorderDeviceId,
+          deletedAt: null,
+          site: {
+            deletedAt: null,
+          },
+        },
+        include: {
+          site: true,
+          ingestionCredential: true,
+        },
+      });
+
+    if (
+      !recorder ||
+      recorder.deviceType !== 'RECORDER' ||
+      recorder.monitoringMode !== 'DIRECT' ||
+      recorder.status !== 'ACTIVE' ||
+      !recorder.ingestionCredential ||
+      !verifyDeviceIngestionKey(
+        deviceKey,
+        recorder.ingestionCredential.keyHash,
+      )
+    ) {
+      throw new UnauthorizedException(
+        'Invalid recorder credentials',
+      );
+    }
+
+    const stored =
+      await this.recorderObservations.upsertBatch(
+        recorder,
+        input.timestamp,
+        input.observations,
+      );
+
+    await this.connectivityEvents.evaluateFleet(
+      recorder.site.organizationId,
+    );
+
+    const observations =
+      await Promise.all(
+        input.observations.map(
+          (observation) =>
+            this.telemetry.findByDeviceId(
+              observation.deviceId,
+              recorder.site.organizationId,
+            ),
+        ),
+      );
+
+    return {
+      recorderDeviceId: recorder.id,
+      ...stored,
+      observations,
+    };
+  }
+
 }

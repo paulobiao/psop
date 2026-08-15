@@ -45,6 +45,17 @@ export interface FleetDevice {
     siteCode: string;
     siteName: string;
   };
+  monitoring: {
+    source:
+      | "DIRECT"
+      | "RECORDER_OBSERVED"
+      | "GATEWAY_DERIVED";
+    individualVerification:
+      | "DIRECT"
+      | "RECORDER_VERIFIED"
+      | "NOT_VERIFIED";
+    observerDeviceId: string | null;
+  };
   connectivity: {
     state: ConnectivityState;
     reasons: string[];
@@ -62,6 +73,14 @@ export interface FleetDevice {
     model: string | null;
     firmware: string | null;
     isoTime: string | null;
+    channelId: string | null;
+    channelNumber: number | null;
+    poePort: number | null;
+    poePowerW: number | null;
+    recordingStatus: string | null;
+    protocol: string | null;
+    resolution: string | null;
+    frameRate: number | null;
   } | null;
 }
 
@@ -77,9 +96,19 @@ export interface GatewayManagedDevice {
     siteName: string;
   };
   monitoring: {
-    source: "GATEWAY_DERIVED";
-    individualVerification: "NOT_VERIFIED";
+    source:
+      | "GATEWAY_DERIVED"
+      | "RECORDER_OBSERVED";
+    individualVerification:
+      | "NOT_VERIFIED"
+      | "RECORDER_VERIFIED";
   };
+  connectivity:
+    | FleetDevice["connectivity"]
+    | null;
+  telemetry:
+    | FleetDevice["telemetry"]
+    | null;
   gateway: {
     id: string;
     name: string;
@@ -142,7 +171,7 @@ export interface OperationalIncident {
   title: string;
   message: string;
   terminalConnectivityState: string | null;
-  monitoringSource: "DIRECT";
+  monitoringSource: "DIRECT" | "VIA_GATEWAY";
   startedAt: string;
   endedAt: string | null;
   lastDetectedAt: string;
