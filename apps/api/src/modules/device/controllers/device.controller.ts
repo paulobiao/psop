@@ -15,6 +15,7 @@ import { CreateDeviceDto } from '../dto/create-device.dto';
 import { SetDemoTelemetryStateDto } from '../dto/set-demo-telemetry-state.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
+import { DeviceIntelligenceService } from '../services/device-intelligence.service.js';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
 import { DeviceTelemetryIngestionService } from '../services/device-telemetry-ingestion.service.js';
 import { TelemetryDemoService } from '../services/telemetry-demo.service';
@@ -31,6 +32,7 @@ export class DeviceController {
     private readonly connectivityEventsService: DeviceConnectivityEventsService,
     private readonly telemetryDemoService: TelemetryDemoService,
     private readonly telemetryIngestionService: DeviceTelemetryIngestionService,
+    private readonly deviceIntelligenceService: DeviceIntelligenceService,
   ) {}
 
   @Get()
@@ -115,6 +117,17 @@ export class DeviceController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.deviceTelemetryService.findByDeviceId(id, user.organizationId);
+  }
+
+  @Get(':id/intelligence')
+  findIntelligence(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.deviceIntelligenceService.getIntelligence(
+      id,
+      user.organizationId,
+    );
   }
 
   @Get(':id')
