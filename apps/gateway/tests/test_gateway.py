@@ -152,13 +152,68 @@ class Tests(unittest.TestCase):
             )
             payload = gateway.build_payload("ONLINE", pending_buffer_count=1)
 
-            self.assertEqual(payload["agentVersion"], "1.2.0")
+            self.assertEqual(payload["agentVersion"], "1.3.0")
             self.assertEqual(payload["previousDeliveryState"], "BUFFERED")
             self.assertEqual(payload["pendingBufferCount"], 1)
             self.assertIn("runtimeStartedAt", payload)
             self.assertIn("runtimeUptimeSeconds", payload)
             self.assertEqual(payload["lastDeliveryError"], "temporary outage")
             self.assertIn("lastDeliveryErrorAt", payload)
+
+    def test_build_payload_reports_collection_quality_from_probes(self):
+        def item(name, success, required=True):
+            return ProbeResult(
+                name, "tcp", "localhost", 80, required, success, 1, "detail"
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = PendingStore(Path(directory) / "pending.db")
+            config = GatewayConfig(
+                "http://127.0.0.1/api/v1",
+                "d1",
+                "EDGE-001",
+                30,
+                1,
+                "Edge",
+                None,
+                Path(directory) / "pending.db",
+                (ProbeConfig("edge", "tcp", "127.0.0.1", 80),),
+            )
+            gateway = EdgeGateway(config, None, store)
+
+            healthy = gateway.build_payload(
+                "ONLINE", results=[item("core", True)]
+            )
+            self.assertEqual(healthy["status"], "online")
+            self.assertEqual(healthy["collectionState"], "COMPLETE")
+            self.assertNotIn("collectionIssues", healthy)
+
+            # A degraded classification caused only by an optional probe is a
+            # collection-quality gap, not a health problem.
+            optional_gap = gateway.build_payload(
+                "DEGRADED",
+                results=[item("core", True), item("extra", False, required=False)],
+            )
+            self.assertEqual(optional_gap["status"], "online")
+            self.assertEqual(optional_gap["collectionState"], "PARTIAL")
+            self.assertEqual(
+                optional_gap["collectionIssues"][0]["code"],
+                "OPTIONAL_ENRICHMENT_UNAVAILABLE",
+            )
+
+            # A required probe failing is still a real signal.
+            required_gap = gateway.build_payload(
+                "DEGRADED",
+                results=[item("core", True), item("dep", False)],
+            )
+            self.assertEqual(required_gap["status"], "warning")
+
+    def test_classify_is_unchanged(self):
+        def item(success, required=True):
+            return ProbeResult("p", "tcp", "localhost", 80, required, success, 1, "t")
+
+        self.assertEqual(classify([item(True), item(False)]), "DEGRADED")
+        self.assertEqual(classify([item(False), item(False)]), "OFFLINE")
 
 if __name__ == "__main__":
     unittest.main()

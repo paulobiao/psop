@@ -58,7 +58,7 @@ class SpecoOptionalEnrichmentTests(unittest.TestCase):
         self.assertEqual(len(result["optionalGaps"]), 1)
         self.assertTrue(
             result["optionalGaps"][0]["source"].startswith(
-                "queryIPChlInfo:"
+                "cameraFirmware:"
             )
         )
         self.assertIsNone(result["channels"][0]["firmware"])

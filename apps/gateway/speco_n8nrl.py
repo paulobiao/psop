@@ -20,6 +20,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from child_device_discovery import (
+    ChildDeviceDiscoveryEngine,
+    DeviceCandidate,
+    DeviceCredential,
+    DiscoveredEndpoint,
+)
+
 VERSION = "0.1.0"
 USER_AGENT = f"PSOP-Speco-N8NRL-Adapter/{VERSION}"
 XML_HEADER = '<?xml version="1.0" encoding="utf-8" ?>'
@@ -356,8 +363,20 @@ class SpecoNRLClient:
         return devices
 
     def query_channel_firmware(self, channel_id: str) -> str | None:
-        root = self._request("queryIPChlInfo", f"<condition><chlId>{html.escape(channel_id)}</chlId></condition>")
-        return _text(root, "./content/chl/detailedSoftwareVersion")
+        # Recorder-native firmware metadata is optional. Vendor-specific
+        # enrichment belongs to child_device_discovery providers.
+        root = self._request(
+            "queryIPChlInfo",
+            (
+                "<condition><chlId>"
+                + html.escape(channel_id)
+                + "</chlId></condition>"
+            ),
+        )
+        return _text(
+            root,
+            "./content/chl/detailedSoftwareVersion",
+        )
 
     def query_recording_status(self) -> dict[str, list[dict[str, Any]]]:
         root = self._request("queryRecStatus")
@@ -449,7 +468,7 @@ class SpecoNRLClient:
             details = status_by_id.get(channel_id, {})
             streams = recording_by_id.get(channel_id, [])
             firmware = optional_safe(
-                f"queryIPChlInfo:{channel_id}",
+                f"cameraFirmware:{channel_id}",
                 lambda cid=channel_id: self.query_channel_firmware(cid),
                 None,
             )
@@ -514,6 +533,171 @@ class SpecoNRLClient:
             "status": "PASSED" if not errors else "PARTIAL",
         }
 
+
+
+_CHILD_DISCOVERY_ENGINE = ChildDeviceDiscoveryEngine()
+
+
+def enrich_discovered_children(
+    result: dict[str, Any],
+    *,
+    recorder_host: str,
+    local_env: dict[str, str],
+    timeout: float,
+    engine: ChildDeviceDiscoveryEngine | None = None,
+) -> dict[str, Any]:
+    """Enrich recorder-discovered children through vendor providers.
+
+    The recorder remains responsible for child discovery and operational
+    state. Vendor providers add optional metadata through endpoints the
+    recorder itself exposes. Provider failures never downgrade the core
+    recorder collection.
+    """
+    active_engine = engine or _CHILD_DISCOVERY_ENGINE
+
+    username = (
+        os.getenv("PSOP_HIKVISION_USERNAME")
+        or local_env.get("PSOP_HIKVISION_USERNAME")
+    )
+    password = (
+        os.getenv("PSOP_HIKVISION_PASSWORD")
+        or local_env.get("PSOP_HIKVISION_PASSWORD")
+    )
+
+    credentials: dict[str, DeviceCredential] = {}
+    if username and password:
+        credentials["hikvision"] = DeviceCredential(
+            username=username,
+            password=password,
+        )
+
+    channels = result.get("channels")
+    if not isinstance(channels, list):
+        return result
+
+    summary = {
+        "candidates": 0,
+        "enriched": 0,
+        "credentialRequired": 0,
+        "authFailed": 0,
+        "noProvider": 0,
+        "unreachable": 0,
+    }
+    enriched_channel_ids: set[str] = set()
+
+    for channel in channels:
+        if not isinstance(channel, dict):
+            continue
+
+        channel_id = channel.get("channelId")
+        proxy_port = channel.get("poePortReported")
+
+        if (
+            not isinstance(channel_id, str)
+            or not channel_id
+            or not isinstance(proxy_port, int)
+            or isinstance(proxy_port, bool)
+            or not 1 <= proxy_port <= 65535
+        ):
+            continue
+
+        summary["candidates"] += 1
+
+        endpoint = DiscoveredEndpoint(
+            scheme="http",
+            host=recorder_host,
+            port=proxy_port,
+            via="RECORDER_PROXY",
+            source="RECORDER_REPORTED_PROXY",
+        )
+        candidate = DeviceCandidate(
+            channel_id=channel_id,
+            name=(
+                channel.get("name")
+                if isinstance(channel.get("name"), str)
+                else None
+            ),
+            model=(
+                channel.get("model")
+                if isinstance(channel.get("model"), str)
+                else None
+            ),
+            manufacturer=(
+                channel.get("manufacturerReported")
+                if isinstance(
+                    channel.get("manufacturerReported"),
+                    str,
+                )
+                else None
+            ),
+            protocol=(
+                channel.get("protocol")
+                if isinstance(channel.get("protocol"), str)
+                else None
+            ),
+            endpoint=endpoint,
+        )
+
+        enrichment = active_engine.enrich(
+            candidate,
+            credentials,
+            timeout,
+        )
+
+        channel["discovery"] = {
+            "endpoint": {
+                "scheme": endpoint.scheme,
+                "host": endpoint.host,
+                "port": endpoint.port,
+                "via": endpoint.via,
+                "source": endpoint.source,
+            },
+            **enrichment.public_dict(),
+        }
+
+        if enrichment.status == "ENRICHED":
+            summary["enriched"] += 1
+            enriched_channel_ids.add(channel_id)
+
+            if enrichment.model:
+                channel["model"] = enrichment.model
+
+            if enrichment.firmware:
+                channel["firmware"] = enrichment.firmware
+                channel["firmwareSource"] = (
+                    enrichment.source
+                    or enrichment.provider
+                )
+
+        elif enrichment.status == "CREDENTIAL_REQUIRED":
+            summary["credentialRequired"] += 1
+        elif enrichment.status == "AUTH_FAILED":
+            summary["authFailed"] += 1
+        elif enrichment.status == "NO_PROVIDER":
+            summary["noProvider"] += 1
+        elif enrichment.status == "UNREACHABLE":
+            summary["unreachable"] += 1
+
+    optional_gaps = result.get("optionalGaps")
+    if (
+        isinstance(optional_gaps, list)
+        and enriched_channel_ids
+    ):
+        result["optionalGaps"] = [
+            gap
+            for gap in optional_gaps
+            if not (
+                isinstance(gap, dict)
+                and isinstance(gap.get("source"), str)
+                and any(
+                    gap["source"] == f"cameraFirmware:{channel_id}"
+                    for channel_id in enriched_channel_ids
+                )
+            )
+        ]
+
+    result["childDiscovery"] = summary
+    return result
 
 LOCAL_DIR = Path(__file__).resolve().parent
 DEFAULT_LOCAL_ENV = LOCAL_DIR / ".env.speco.local"
@@ -645,23 +829,178 @@ class PsopRecorderApiClient:
         if not isinstance(recorder, dict):
             recorder = {}
 
-        payload: dict[str, Any] = {
-            "timestamp": int(result["observedAtEpoch"]),
-            "status": (
-                "online"
-                if result.get("status") == "PASSED"
-                else "warning"
+        storage = result.get("storage")
+        if not isinstance(storage, dict):
+            storage = {}
+
+        poe = result.get("poe")
+        if not isinstance(poe, dict):
+            poe = {}
+
+        channels = result.get("channels")
+        if not isinstance(channels, list):
+            channels = []
+
+        online_ids = result.get("onlineChannelIds")
+        if not isinstance(online_ids, list):
+            online_ids = None
+
+        total_power = poe.get("totalPowerW")
+        remaining_power = poe.get("remainingPowerW")
+        used_power = None
+        if (
+            isinstance(total_power, (int, float))
+            and not isinstance(total_power, bool)
+            and isinstance(remaining_power, (int, float))
+            and not isinstance(remaining_power, bool)
+        ):
+            used_power = max(
+                0.0,
+                float(total_power) - float(remaining_power),
+            )
+
+        disks = storage.get("disks")
+        disk_count = len(disks) if isinstance(disks, list) else None
+
+        def first_text(*keys: str) -> str | None:
+            for key in keys:
+                value = recorder.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return None
+
+        details: dict[str, Any] = {
+            "storageState": storage.get("state"),
+            "storagePresent": storage.get("present"),
+            "diskCount": disk_count,
+            "poeTotalPowerW": total_power,
+            "poeRemainingPowerW": remaining_power,
+            "poeUsedPowerW": used_power,
+            "onlineChannelCount": (
+                len(online_ids)
+                if online_ids is not None
+                else None
+            ),
+            "observedChannelCount": len(channels),
+            "hardwareVersion": first_text(
+                "hardwareVersion",
+                "hardware",
+                "hardWareVersion",
+            ),
+            "apiVersion": first_text(
+                "apiVersion",
+                "api",
+            ),
+            "onvifVersion": first_text(
+                "onvifVersion",
+                "onvif",
+            ),
+            "onvifDeviceVersion": first_text(
+                "onvifDeviceVersion",
+                "onvifDevVersion",
+            ),
+            "kernelVersion": first_text(
+                "kernelVersion",
+                "kenerlVersion",
+            ),
+            "mcuVersion": first_text(
+                "mcuVersion",
+                "mcu",
             ),
         }
 
-        model = recorder.get("model")
-        firmware = recorder.get("firmware")
+        # Whitelist only operational metadata. Do not send serial numbers,
+        # credentials, tokens or arbitrary raw recorder objects.
+        details = {
+            key: value
+            for key, value in details.items()
+            if value is not None
+        }
 
-        if isinstance(model, str) and model.strip():
-            payload["model"] = model.strip()
+        errors = result.get("errors")
+        errors = errors if isinstance(errors, list) else []
+        optional_gaps = result.get("optionalGaps")
+        optional_gaps = (
+            optional_gaps if isinstance(optional_gaps, list) else []
+        )
 
-        if isinstance(firmware, str) and firmware.strip():
-            payload["firmware"] = firmware.strip()
+        collection_issues: list[dict[str, Any]] = []
+        for entry in errors:
+            if isinstance(entry, dict):
+                collection_issues.append(
+                    {
+                        "code": "COLLECTION_SOURCE_FAILED",
+                        "source": "ADAPTER",
+                        "detail": (
+                            f"{entry.get('source')}: {entry.get('error')}"
+                        )[:500],
+                    }
+                )
+        for entry in optional_gaps:
+            if isinstance(entry, dict):
+                collection_issues.append(
+                    {
+                        "code": "OPTIONAL_ENRICHMENT_UNAVAILABLE",
+                        "source": "ADAPTER",
+                        "detail": (
+                            f"{entry.get('source')}: {entry.get('error')}"
+                        )[:500],
+                    }
+                )
+
+        # `COMPLETE` only when every expected source responded. A failed core
+        # source (`errors`) or an unavailable optional enrichment
+        # (`optional_gaps`) both mean the collection was only `PARTIAL`. An
+        # optional gap is never a core failure, so this never becomes `FAILED`:
+        # the recorder stays `online` and connectivity/health are untouched.
+        collection_state = (
+            "COMPLETE" if not errors and not optional_gaps else "PARTIAL"
+        )
+
+        storage_state = storage.get("state")
+        storage_present = bool(storage.get("present"))
+        capabilities = {
+            "storage": {
+                "supported": True,
+                "present": storage_present,
+                "state": (
+                    storage_state
+                    if storage_state
+                    in {"PRESENT", "NOT_INSTALLED", "UNKNOWN"}
+                    else "UNKNOWN"
+                ),
+            },
+            "recording": {
+                "state": (
+                    "NOT_AVAILABLE_NO_STORAGE"
+                    if storage_state == "NOT_INSTALLED"
+                    else "UNKNOWN"
+                ),
+            },
+        }
+
+        payload: dict[str, Any] = {
+            "timestamp": int(result["observedAtEpoch"]),
+            # Connectivity/health for the recorder itself: it stays "online"
+            # whenever authentication + core collection confirmed the device.
+            # Collection-quality gaps (a failed optional source, missing
+            # firmware enrichment) NEVER degrade the recorder here — they are
+            # reported through `collectionState` / `collectionIssues` instead.
+            "status": "online",
+            "collectionState": collection_state,
+            "collectionIssues": collection_issues,
+            "capabilities": capabilities,
+            "details": details,
+        }
+
+        model = first_text("model", "productModel")
+        firmware = first_text("firmware", "softwareVersion")
+
+        if model:
+            payload["model"] = model
+
+        if firmware:
+            payload["firmware"] = firmware
 
         return self._post("/telemetry/ingest", payload)
 
@@ -971,7 +1310,14 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--diagnose", action="store_true")
     mode.add_argument("--once", action="store_true")
+    mode.add_argument("--watch", action="store_true")
 
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=30.0,
+        help="Polling interval in seconds for --watch",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--version",
@@ -987,7 +1333,12 @@ def main() -> int:
         )
 
     username = args.username or input("Speco username: ").strip()
-    password = getpass.getpass("Speco password: ")
+    # Allow a runtime-only password (e.g. sourced from the macOS Keychain by
+    # the local lab manager). It is read from the environment and never logged
+    # or persisted; interactive use still falls back to a getpass prompt.
+    password = os.environ.get("PSOP_SPECO_PASSWORD") or getpass.getpass(
+        "Speco password: "
+    )
 
     client = SpecoNRLClient(
         args.host,
@@ -1028,7 +1379,12 @@ def main() -> int:
         )
         return 6
 
-    result = client.collect()
+    result = enrich_discovered_children(
+        client.collect(),
+        recorder_host=args.host,
+        local_env=local_env,
+        timeout=max(0.5, args.timeout),
+    )
 
     if args.diagnose:
         print(
@@ -1082,6 +1438,39 @@ def main() -> int:
             recorder_key,
             max(0.5, args.timeout),
         )
+
+        if args.watch:
+            interval = max(5.0, args.interval)
+            print(
+                f"Speco watch ativo a cada {interval:g}s "
+                "(Ctrl+C para parar)"
+            )
+
+            try:
+                while True:
+                    delivery = run_psop_once(
+                        result,
+                        api,
+                        mapping,
+                    )
+
+                    print(
+                        "Speco "
+                        f"collection={result['status']} "
+                        f"children={delivery['observationsSent']} "
+                        f"delivery={delivery['childDelivery']}"
+                    )
+
+                    time.sleep(interval)
+                    result = enrich_discovered_children(
+                        client.collect(),
+                        recorder_host=args.host,
+                        local_env=local_env,
+                        timeout=max(0.5, args.timeout),
+                    )
+            except KeyboardInterrupt:
+                print("\nSpeco watch encerrado.")
+                return 0
 
         delivery = run_psop_once(
             result,
