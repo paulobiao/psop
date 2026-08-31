@@ -754,6 +754,54 @@ describe('PSOP local telemetry ingestion', () => {
 
     expect(openAlert).not.toBeNull();
 
+    expect(openAlert?.title).toBe(
+      'Recorder Observed Camera is offline',
+    );
+
+    expect(openAlert?.message).toBe(
+      'Recorder Observed Camera is offline according to NVR Speco Test Recorder on channel 2.',
+    );
+
+    expect(openAlert?.context).toEqual(
+      expect.objectContaining({
+        reasons: expect.arrayContaining([
+          'REPORTED_OFFLINE',
+          'RECORDER_VERIFIED_OFFLINE',
+        ]),
+        monitoringSource: 'RECORDER_OBSERVED',
+        individualVerification: 'RECORDER_VERIFIED',
+        observerDeviceId: recorderDeviceId,
+        observerDeviceName: 'NVR Speco Test Recorder',
+        channelNumber: 2,
+      }),
+    );
+
+    const recorderOwnTelemetry =
+      await request(app.getHttpServer())
+        .get(
+          `${API}/devices/${recorderDeviceId}/telemetry`,
+        )
+        .set(bearer(adminToken))
+        .expect(200);
+
+    expect(
+      recorderOwnTelemetry.body.connectivity.state,
+    ).not.toBe('OFFLINE');
+
+    // The recorder never sends its own DIRECT telemetry in this fixture,
+    // so it may legitimately carry its own NEVER_SEEN alert — but the
+    // child camera's OFFLINE state must never leak into it.
+    const recorderOwnOfflineAlert =
+      await prisma.alert.findFirst({
+        where: {
+          deviceId: recorderDeviceId,
+          status: 'OPEN',
+          connectivityState: 'OFFLINE',
+        },
+      });
+
+    expect(recorderOwnOfflineAlert).toBeNull();
+
     const events = await request(
       app.getHttpServer(),
     )
@@ -881,6 +929,114 @@ describe('PSOP local telemetry ingestion', () => {
         ],
       })
       .expect(400);
+  });
+
+  it('does not spawn a duplicate incident when the same OFFLINE state is polled repeatedly, and opens a fresh incident after recovery', async () => {
+    async function postObservation(
+      status: 'online' | 'offline',
+    ) {
+      return request(app.getHttpServer())
+        .post(`${API}/telemetry/recorder-observations`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', recorderKey)
+        .send({
+          timestamp: Math.floor(Date.now() / 1000),
+          observations: [
+            {
+              deviceId: recorderChildDeviceId,
+              status,
+              channelNumber: 2,
+              poePort: 2,
+              poePowerW: status === 'online' ? 3.19 : 0,
+              protocol: 'ONVIF',
+            },
+          ],
+        })
+        .expect(201);
+    }
+
+    async function connectivityEventCount(): Promise<number> {
+      const response = await request(app.getHttpServer())
+        .get(
+          `${API}/devices/${recorderChildDeviceId}/connectivity-events`,
+        )
+        .set(bearer(adminToken))
+        .expect(200);
+
+      return response.body.events.length;
+    }
+
+    // First drop after the previous test's recovery.
+    await postObservation('offline');
+
+    const firstIncident = await prisma.alert.findFirstOrThrow({
+      where: {
+        deviceId: recorderChildDeviceId,
+        status: 'OPEN',
+      },
+    });
+
+    const eventCountAfterFirstDrop =
+      await connectivityEventCount();
+
+    // Poll the same OFFLINE state twice more.
+    await postObservation('offline');
+    await postObservation('offline');
+
+    const openIncidentsAfterPolling =
+      await prisma.alert.findMany({
+        where: {
+          deviceId: recorderChildDeviceId,
+          status: 'OPEN',
+        },
+      });
+
+    expect(openIncidentsAfterPolling).toHaveLength(1);
+    expect(openIncidentsAfterPolling[0].id).toBe(
+      firstIncident.id,
+    );
+    expect(
+      openIncidentsAfterPolling[0].openedAt.getTime(),
+    ).toBe(firstIncident.openedAt.getTime());
+    expect(
+      openIncidentsAfterPolling[0].lastDetectedAt.getTime(),
+    ).toBeGreaterThanOrEqual(
+      firstIncident.lastDetectedAt.getTime(),
+    );
+
+    expect(await connectivityEventCount()).toBe(
+      eventCountAfterFirstDrop,
+    );
+
+    // Recover, then drop again: this must open a brand new incident.
+    await postObservation('online');
+
+    const resolvedIncident =
+      await prisma.alert.findFirstOrThrow({
+        where: {
+          id: firstIncident.id,
+        },
+      });
+
+    expect(resolvedIncident.status).toBe('RESOLVED');
+
+    await postObservation('offline');
+
+    const secondIncident =
+      await prisma.alert.findFirstOrThrow({
+        where: {
+          deviceId: recorderChildDeviceId,
+          status: 'OPEN',
+        },
+      });
+
+    expect(secondIncident.id).not.toBe(firstIncident.id);
+    expect(
+      secondIncident.openedAt.getTime(),
+    ).toBeGreaterThan(firstIncident.openedAt.getTime());
+
+    // Bring the fixture back to a healthy state for later tests.
+    await postObservation('online');
   });
 
   it(
@@ -1036,6 +1192,135 @@ describe('PSOP local telemetry ingestion', () => {
     },
   );
 
+  it(
+    'keeps a no-HDD recorder ONLINE/HEALTHY while surfacing collection quality (V2)',
+    async () => {
+      // The Speco adapter reports the NVR itself: authentication + core
+      // collection succeeded, one optional source failed, and there is no
+      // HDD installed. None of that may degrade the recorder.
+      const response = await request(app.getHttpServer())
+        .post(`${API}/telemetry/ingest`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', recorderKey)
+        .send({
+          timestamp: Math.floor(Date.now() / 1000),
+          status: 'online',
+          model: 'N8NRL',
+          firmware: '1.0.0',
+          collectionState: 'PARTIAL',
+          collectionIssues: [
+            {
+              code: 'OPTIONAL_ENRICHMENT_UNAVAILABLE',
+              source: 'ADAPTER',
+              detail: 'cameraFirmware:c1: errorCode=536870962',
+            },
+          ],
+          capabilities: {
+            storage: {
+              supported: true,
+              present: false,
+              state: 'NOT_INSTALLED',
+            },
+            recording: { state: 'NOT_AVAILABLE_NO_STORAGE' },
+          },
+        })
+        .expect(201);
+
+      expect(response.body.connectivity.state).toBe('ONLINE');
+      expect(response.body.connectivity.linkState).toBe('ONLINE');
+      expect(response.body.health.state).toBe('HEALTHY');
+      expect(response.body.health.reasons).toEqual([]);
+      expect(response.body.collection.state).toBe('PARTIAL');
+      expect(
+        response.body.collection.issues.map(
+          (issue: { code: string }) => issue.code,
+        ),
+      ).toEqual(['OPTIONAL_ENRICHMENT_UNAVAILABLE']);
+      expect(response.body.capabilities.storage.state).toBe(
+        'NOT_INSTALLED',
+      );
+      expect(response.body.capabilities.storage.present).toBe(false);
+      expect(response.body.capabilities.recording.state).toBe(
+        'NOT_AVAILABLE_NO_STORAGE',
+      );
+
+      // No incident of any kind for the recorder from collection quality.
+      const recorderIncident = await prisma.alert.findFirst({
+        where: {
+          deviceId: recorderDeviceId,
+          status: 'OPEN',
+        },
+      });
+      expect(recorderIncident).toBeNull();
+
+      // Collection issues are visible in the overview as diagnostics only.
+      const overview = await request(app.getHttpServer())
+        .get(`${API}/operations/overview`)
+        .set(bearer(adminToken))
+        .expect(200);
+
+      expect(
+        overview.body.summary.collectionIssues,
+      ).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it(
+    'reconciles a reported COMPLETE + optional enrichment gap to PARTIAL (real-lab shape)',
+    async () => {
+      // The live Speco N8NRL posts collectionState COMPLETE together with
+      // per-channel OPTIONAL_ENRICHMENT_UNAVAILABLE issues (queryIPChlInfo
+      // unsupported). The engine must reconcile that to PARTIAL without
+      // touching connectivity/health or opening an incident.
+      const response = await request(app.getHttpServer())
+        .post(`${API}/telemetry/ingest`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', recorderKey)
+        .send({
+          timestamp: Math.floor(Date.now() / 1000),
+          status: 'online',
+          model: 'N8NRL',
+          firmware: '1.0.0',
+          collectionState: 'COMPLETE',
+          collectionIssues: [
+            {
+              code: 'OPTIONAL_ENRICHMENT_UNAVAILABLE',
+              source: 'ADAPTER',
+              detail: 'cameraFirmware:c1: errorCode=536870962',
+            },
+            {
+              code: 'OPTIONAL_ENRICHMENT_UNAVAILABLE',
+              source: 'ADAPTER',
+              detail: 'cameraFirmware:c2: errorCode=536870962',
+            },
+          ],
+        })
+        .expect(201);
+
+      expect(response.body.connectivity.state).toBe('ONLINE');
+      expect(response.body.connectivity.linkState).toBe('ONLINE');
+      expect(response.body.health.state).toBe('HEALTHY');
+      expect(response.body.health.reasons).toEqual([]);
+      expect(response.body.collection.state).toBe('PARTIAL');
+      expect(
+        response.body.collection.issues.map(
+          (issue: { code: string }) => issue.code,
+        ),
+      ).toEqual([
+        'OPTIONAL_ENRICHMENT_UNAVAILABLE',
+        'OPTIONAL_ENRICHMENT_UNAVAILABLE',
+      ]);
+
+      const recorderIncident = await prisma.alert.findFirst({
+        where: {
+          deviceId: recorderDeviceId,
+          status: 'OPEN',
+        },
+      });
+      expect(recorderIncident).toBeNull();
+    },
+  );
+
   it('rejects missing, invalid and cross-device credentials', async () => {
     const payload = telemetryPayload();
 
@@ -1073,7 +1358,12 @@ describe('PSOP local telemetry ingestion', () => {
       )
       .expect(201);
 
+    // Compatibility alias still collapses the health degradation.
     expect(response.body.connectivity.state).toBe('DEGRADED');
+    // The three dimensions are now independent: the link is fine, only
+    // operational health is degraded.
+    expect(response.body.connectivity.linkState).toBe('ONLINE');
+    expect(response.body.health.state).toBe('DEGRADED');
 
     const snapshot = await prisma.deviceTelemetrySnapshot.findUniqueOrThrow({
       where: {

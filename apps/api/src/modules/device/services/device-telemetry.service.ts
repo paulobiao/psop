@@ -20,11 +20,26 @@ import {
   DeviceHealthService,
   type ConnectivityState,
 } from './device-health.service.js';
+import {
+  DEFAULT_CAPABILITIES,
+  type CollectionState,
+  type OperationalCapabilities,
+  type RecordingCapabilityState,
+  type ReasonRef,
+  type StorageCapabilityState,
+} from '../domain/operational-health.types.js';
 import { TelemetryDemoService } from './telemetry-demo.service.js';
 import { LocalTelemetryService } from './local-telemetry.service.js';
 import { RecorderObservationService } from './recorder-observation.service.js';
 
 type TelemetryItem = Record<string, unknown>;
+
+const COLLECTION_STATES = new Set<CollectionState>([
+  'COMPLETE',
+  'PARTIAL',
+  'FAILED',
+  'NOT_APPLICABLE',
+]);
 
 @Injectable()
 export class DeviceTelemetryService {
@@ -153,8 +168,22 @@ export class DeviceTelemetryService {
       UNKNOWN: 0,
     };
 
+    let collectionIssues = 0;
+    let partialCollection = 0;
+
     for (const device of fleet) {
       counts[device.connectivity.state] += 1;
+
+      if (device.collection.issues.length > 0) {
+        collectionIssues += 1;
+      }
+
+      if (
+        device.collection.state === 'PARTIAL' ||
+        device.collection.state === 'FAILED'
+      ) {
+        partialCollection += 1;
+      }
     }
 
     return {
@@ -166,6 +195,9 @@ export class DeviceTelemetryService {
         offline: counts.OFFLINE,
         neverSeen: counts.NEVER_SEEN,
         unknown: counts.UNKNOWN,
+        // Diagnostics only — collection quality never opens incidents.
+        collectionIssues,
+        partialCollection,
       },
       devices: fleet,
     };
@@ -302,7 +334,16 @@ export class DeviceTelemetryService {
         item?.storage_used_pct,
       );
 
-    const health =
+    const isRecorderObserved =
+      device.monitoringMode === 'VIA_GATEWAY';
+
+    const capabilities = this.deriveCapabilities(
+      device,
+      item,
+      isRecorderObserved,
+    );
+
+    const evaluation =
       this.deviceHealthService
         .evaluate({
           hasTelemetry:
@@ -314,7 +355,7 @@ export class DeviceTelemetryService {
               .expectedHeartbeatInterval,
           reportedStatus,
           reportedOfflineIsAuthoritative:
-            device.monitoringMode === 'VIA_GATEWAY' &&
+            isRecorderObserved &&
             this.toString(
               item?.individual_verification,
             ) === 'RECORDER_VERIFIED',
@@ -324,7 +365,20 @@ export class DeviceTelemetryService {
             this.toString(
               item?.observation_source,
             ) === 'RECORDER',
+          isRecorderObserved,
+          observerDeviceId:
+            this.toString(item?.observer_device_id),
+          channelNumber:
+            this.toNumber(item?.channel_number),
+          collectionState:
+            this.toCollectionState(item?.collection_state),
+          collectionIssues:
+            this.toReasonRefs(item?.collection_issues),
+          capabilities,
         });
+
+    const health = evaluation.connectivity;
+    const reasons = evaluation.connectivity.legacyReasons;
 
     return {
       device: {
@@ -368,9 +422,15 @@ export class DeviceTelemetryService {
           ),
       },
       connectivity: {
+        // Compatibility alias (5 values incl. DEGRADED) for the frozen
+        // dashboard. The true connectivity dimension is `linkState`.
         state: health.state,
-        reasons: health.reasons,
+        linkState: health.linkState,
+        reasons,
+        reasonRefs: health.reasons,
         lastHeartbeatAt:
+          health.lastHeartbeatAt,
+        lastObservedAt:
           health.lastHeartbeatAt,
         ageSeconds:
           health.ageSeconds,
@@ -381,6 +441,15 @@ export class DeviceTelemetryService {
           health
             .offlineAfterSeconds,
       },
+      health: {
+        state: evaluation.health.state,
+        reasons: evaluation.health.reasons,
+      },
+      collection: {
+        state: evaluation.collection.state,
+        issues: evaluation.collection.issues,
+      },
+      capabilities: evaluation.capabilities,
       telemetry: item
         ? {
             reportedStatus,
@@ -438,6 +507,10 @@ export class DeviceTelemetryService {
               this.toNumber(
                 item.frame_rate,
               ),
+            details:
+              this.toObject(
+                item.details,
+              ),
           }
         : null,
     };
@@ -469,7 +542,204 @@ export class DeviceTelemetryService {
     return null;
   }
 
+  private toObject(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ) {
+      return null;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
   private toString(value: unknown): string | null {
     return typeof value === 'string' ? value : null;
+  }
+
+  private toCollectionState(
+    value: unknown,
+  ): CollectionState | null {
+    return typeof value === 'string' &&
+      COLLECTION_STATES.has(value as CollectionState)
+      ? (value as CollectionState)
+      : null;
+  }
+
+  private toReasonRefs(value: unknown): ReasonRef[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.flatMap((entry) => {
+      if (
+        !entry ||
+        typeof entry !== 'object' ||
+        typeof (entry as { code?: unknown }).code !== 'string'
+      ) {
+        return [];
+      }
+
+      const raw = entry as Record<string, unknown>;
+
+      return [
+        {
+          code: raw.code as ReasonRef['code'],
+          source:
+            typeof raw.source === 'string'
+              ? (raw.source as ReasonRef['source'])
+              : 'ADAPTER',
+          detail:
+            typeof raw.detail === 'string' ? raw.detail : null,
+          observerDeviceId:
+            typeof raw.observerDeviceId === 'string'
+              ? raw.observerDeviceId
+              : null,
+          channelNumber:
+            typeof raw.channelNumber === 'number'
+              ? raw.channelNumber
+              : null,
+        },
+      ];
+    });
+  }
+
+  /**
+   * Storage / recording capability snapshot. Preference order:
+   *  1. explicit `capabilities` object reported by the adapter
+   *  2. derived from recorder `details.storageState` (direct RECORDER)
+   *  3. derived from a recorder-observed child's `recording_status`
+   *  4. NOT_APPLICABLE default (plain camera / gateway)
+   */
+  private deriveCapabilities(
+    device: DeviceWithSite,
+    item: TelemetryItem | undefined,
+    isRecorderObserved: boolean,
+  ): OperationalCapabilities {
+    const explicit = this.toObject(item?.capabilities);
+
+    if (explicit) {
+      return this.normalizeCapabilities(explicit);
+    }
+
+    const details = this.toObject(item?.details);
+    const storageState = this.toString(details?.storageState);
+
+    if (storageState) {
+      const present = storageState === 'PRESENT';
+      const storageCapabilityState: StorageCapabilityState =
+        storageState === 'PRESENT'
+          ? 'PRESENT'
+          : storageState === 'NOT_INSTALLED'
+            ? 'NOT_INSTALLED'
+            : 'UNKNOWN';
+
+      return {
+        storage: {
+          supported: true,
+          present,
+          state: storageCapabilityState,
+        },
+        recording: {
+          state: present
+            ? 'UNKNOWN'
+            : storageState === 'NOT_INSTALLED'
+              ? 'NOT_AVAILABLE_NO_STORAGE'
+              : 'UNKNOWN',
+        },
+      };
+    }
+
+    if (isRecorderObserved) {
+      return {
+        storage: {
+          supported: false,
+          present: false,
+          state: 'NOT_APPLICABLE',
+        },
+        recording: {
+          state: this.toRecordingState(
+            this.toString(item?.recording_status),
+          ),
+        },
+      };
+    }
+
+    return DEFAULT_CAPABILITIES;
+  }
+
+  private normalizeCapabilities(
+    raw: Record<string, unknown>,
+  ): OperationalCapabilities {
+    const storage = this.toObject(raw.storage);
+    const recording = this.toObject(raw.recording);
+
+    const storageState = this.toString(storage?.state);
+    const present = storage?.present === true;
+
+    return {
+      storage: {
+        supported: storage?.supported === true || Boolean(storageState),
+        present,
+        state:
+          storageState === 'PRESENT' ||
+          storageState === 'NOT_INSTALLED' ||
+          storageState === 'UNKNOWN' ||
+          storageState === 'NOT_APPLICABLE'
+            ? (storageState as StorageCapabilityState)
+            : present
+              ? 'PRESENT'
+              : 'NOT_APPLICABLE',
+      },
+      recording: {
+        state: this.normalizeRecordingState(
+          this.toString(recording?.state),
+        ),
+      },
+    };
+  }
+
+  private toRecordingState(
+    raw: string | null,
+  ): RecordingCapabilityState {
+    if (!raw) {
+      return 'NOT_APPLICABLE';
+    }
+
+    if (raw === 'NOT_AVAILABLE_NO_STORAGE') {
+      return 'NOT_AVAILABLE_NO_STORAGE';
+    }
+
+    if (
+      raw === 'AVAILABLE' ||
+      raw === 'recording' ||
+      raw === 'recordingNormal'
+    ) {
+      return 'AVAILABLE';
+    }
+
+    if (raw === 'ABNORMAL' || raw === 'recordingAbnormal') {
+      return 'ABNORMAL';
+    }
+
+    return 'UNKNOWN';
+  }
+
+  private normalizeRecordingState(
+    raw: string | null,
+  ): RecordingCapabilityState {
+    switch (raw) {
+      case 'AVAILABLE':
+      case 'ABNORMAL':
+      case 'NOT_AVAILABLE_NO_STORAGE':
+      case 'UNKNOWN':
+      case 'NOT_APPLICABLE':
+        return raw;
+      default:
+        return this.toRecordingState(raw);
+    }
   }
 }

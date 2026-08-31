@@ -68,6 +68,21 @@ export class LocalTelemetryService {
   ) {
     this.assertEnabled();
 
+    const details =
+      input.details === undefined
+        ? undefined
+        : input.details as Prisma.InputJsonValue;
+
+    const collectionIssues =
+      input.collectionIssues === undefined
+        ? undefined
+        : (input.collectionIssues as unknown as Prisma.InputJsonValue);
+
+    const capabilities =
+      input.capabilities === undefined
+        ? undefined
+        : (input.capabilities as unknown as Prisma.InputJsonValue);
+
     return this.prisma.deviceTelemetrySnapshot.upsert({
       where: { deviceId },
       update: {
@@ -80,6 +95,10 @@ export class LocalTelemetryService {
         uptimeSeconds: input.uptimeSeconds,
         model: input.model,
         firmware: input.firmware,
+        details,
+        collectionState: input.collectionState ?? null,
+        collectionIssues,
+        capabilities,
       },
       create: {
         deviceId,
@@ -91,6 +110,10 @@ export class LocalTelemetryService {
         uptimeSeconds: input.uptimeSeconds,
         model: input.model,
         firmware: input.firmware,
+        details,
+        collectionState: input.collectionState ?? null,
+        collectionIssues,
+        capabilities,
       },
     });
   }
@@ -134,6 +157,11 @@ export class LocalTelemetryService {
   }
 
   async storeEvent(event: Record<string, unknown>) {
+    const context =
+      event.context === undefined
+        ? undefined
+        : (event.context as Prisma.InputJsonValue);
+
     const created =
       await this.prisma.deviceConnectivityEvent.create({
         data: {
@@ -157,6 +185,7 @@ export class LocalTelemetryService {
             typeof event.expires_at === 'number'
               ? new Date(event.expires_at * 1000)
               : null,
+          context,
         },
         include: {
           device: {
@@ -241,6 +270,10 @@ export class LocalTelemetryService {
       uptimeSeconds: number | null;
       model: string | null;
       firmware: string | null;
+      details: Prisma.JsonValue | null;
+      collectionState: string | null;
+      collectionIssues: Prisma.JsonValue | null;
+      capabilities: Prisma.JsonValue | null;
     },
     device: DeviceWithSite,
   ) {
@@ -260,6 +293,10 @@ export class LocalTelemetryService {
       model: snapshot.model ?? device.model,
       firmware:
         snapshot.firmware ?? device.firmwareVersion,
+      details: snapshot.details,
+      collection_state: snapshot.collectionState,
+      collection_issues: snapshot.collectionIssues,
+      capabilities: snapshot.capabilities,
     };
   }
 
@@ -281,6 +318,7 @@ export class LocalTelemetryService {
       expires_at: event.expiresAt
         ? Math.floor(event.expiresAt.getTime() / 1000)
         : null,
+      context: event.context,
     };
   }
 }

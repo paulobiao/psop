@@ -1,13 +1,19 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 const EDGE_AGENT_DELIVERY_STATES = [
@@ -15,6 +21,88 @@ const EDGE_AGENT_DELIVERY_STATES = [
   'BUFFERED',
   'ERROR',
 ] as const;
+
+const COLLECTION_STATES = [
+  'COMPLETE',
+  'PARTIAL',
+  'FAILED',
+  'NOT_APPLICABLE',
+] as const;
+
+const REASON_SOURCES = [
+  'DEVICE',
+  'RECORDER',
+  'GATEWAY',
+  'ADAPTER',
+  'API',
+] as const;
+
+const STORAGE_CAPABILITY_STATES = [
+  'PRESENT',
+  'NOT_INSTALLED',
+  'UNKNOWN',
+  'NOT_APPLICABLE',
+] as const;
+
+const RECORDING_CAPABILITY_STATES = [
+  'AVAILABLE',
+  'ABNORMAL',
+  'NOT_AVAILABLE_NO_STORAGE',
+  'UNKNOWN',
+  'NOT_APPLICABLE',
+] as const;
+
+export class CollectionIssueDto {
+  @IsString()
+  @MaxLength(64)
+  code!: string;
+
+  @IsOptional()
+  @IsIn(REASON_SOURCES)
+  source?: (typeof REASON_SOURCES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  detail?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  channelNumber?: number;
+}
+
+class StorageCapabilityDto {
+  @IsOptional()
+  @IsBoolean()
+  supported?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  present?: boolean;
+
+  @IsOptional()
+  @IsIn(STORAGE_CAPABILITY_STATES)
+  state?: (typeof STORAGE_CAPABILITY_STATES)[number];
+}
+
+class RecordingCapabilityDto {
+  @IsOptional()
+  @IsIn(RECORDING_CAPABILITY_STATES)
+  state?: (typeof RECORDING_CAPABILITY_STATES)[number];
+}
+
+export class OperationalCapabilitiesDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StorageCapabilityDto)
+  storage?: StorageCapabilityDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RecordingCapabilityDto)
+  recording?: RecordingCapabilityDto;
+}
 
 export class IngestDeviceTelemetryDto {
   @IsInt()
@@ -56,6 +144,26 @@ export class IngestDeviceTelemetryDto {
   @IsString()
   @MaxLength(120)
   firmware?: string;
+
+  @IsOptional()
+  @IsObject()
+  details?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsIn(COLLECTION_STATES)
+  collectionState?: (typeof COLLECTION_STATES)[number];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(64)
+  @ValidateNested({ each: true })
+  @Type(() => CollectionIssueDto)
+  collectionIssues?: CollectionIssueDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OperationalCapabilitiesDto)
+  capabilities?: OperationalCapabilitiesDto;
 
   @IsOptional()
   @IsString()

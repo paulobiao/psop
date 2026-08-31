@@ -141,6 +141,18 @@ export class OperationsOverviewService {
                 ? deviceSnapshot?.connectivity ??
                   null
                 : null,
+            health:
+              recorderVerified
+                ? deviceSnapshot?.health ?? null
+                : null,
+            collection:
+              recorderVerified
+                ? deviceSnapshot?.collection ?? null
+                : null,
+            capabilities:
+              recorderVerified
+                ? deviceSnapshot?.capabilities ?? null
+                : null,
             telemetry:
               recorderVerified
                 ? deviceSnapshot?.telemetry ??
@@ -243,6 +255,9 @@ export class OperationsOverviewService {
         offline: fleet.summary.offline,
         neverSeen: fleet.summary.neverSeen,
         unknown: fleet.summary.unknown,
+        // Diagnostics only — collection quality never opens incidents.
+        collectionIssues: fleet.summary.collectionIssues,
+        partialCollection: fleet.summary.partialCollection,
         activeAlerts: activeAlerts.length,
         criticalAlerts: criticalAlerts.length,
         warningAlerts: warningAlerts.length,
@@ -265,6 +280,7 @@ export class OperationsOverviewService {
         message: alert.message,
         connectivityState:
           alert.connectivityState,
+        context: alert.context,
         openedAt: alert.openedAt,
         lastDetectedAt: alert.lastDetectedAt,
       })),
@@ -288,6 +304,7 @@ export class OperationsOverviewService {
           message: alert.message,
           terminalConnectivityState:
             alert.connectivityState,
+          context: alert.context,
           monitoringSource:
             alert.device.monitoringMode ===
             'VIA_GATEWAY'

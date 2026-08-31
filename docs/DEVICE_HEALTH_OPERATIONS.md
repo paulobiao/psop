@@ -1,18 +1,25 @@
 # Device Health Operations
 
+> **Superseded by [Operational Health Engine V2](./OPERATIONAL_HEALTH_ENGINE_V2.md).**
+> The single collapsed `connectivity.state` described below is now a
+> backward-compatibility alias. The current model splits **connectivity**
+> (`connectivity.linkState`), **health** (`health.state`) and **collection
+> quality** (`collection.state`) into three independent dimensions. Read the V2
+> doc first; the sections below describe the legacy alias only.
+
 ## Purpose
 
 This milestone adds deterministic operational-health classification to PSOP while preserving the existing AWS IoT Core and DynamoDB integrations.
 
-## Health states
+## Health states (legacy alias `connectivity.state`)
 
 PSOP classifies monitored cameras as:
 
 - `ONLINE`: heartbeat is current and telemetry is healthy;
-- `DEGRADED`: heartbeat is current, but telemetry contains warning conditions;
+- `DEGRADED`: compat alias only — the link is ONLINE but `health.state` is DEGRADED/CRITICAL;
 - `OFFLINE`: heartbeat age exceeded the permitted interval;
 - `NEVER_SEEN`: no telemetry has been received;
-- `UNKNOWN`: telemetry exists without a valid timestamp.
+- `UNKNOWN`: telemetry exists without a valid timestamp, or the reported status is unrecognised.
 
 ## Degradation signals
 
@@ -56,6 +63,9 @@ PostgreSQL-backed integration tests validate:
 
 ## Infrastructure safety
 
-No migration is required.
+The original milestone required no migration. Operational Health Engine V2 adds
+one **additive, nullable** migration
+(`20260829120000_operational_health_engine_v2`): `collection_state`,
+`collection_issues`, `capabilities` columns on `device_telemetry_snapshots`.
 
 This milestone does not create, delete or modify AWS resources.

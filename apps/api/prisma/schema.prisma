@@ -187,6 +187,10 @@ model DeviceTelemetrySnapshot {
   uptimeSeconds  Int?     @map("uptime_seconds")
   model          String?
   firmware       String?
+  details        Json?
+  collectionState  String? @map("collection_state")
+  collectionIssues Json?   @map("collection_issues")
+  capabilities     Json?
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -253,6 +257,7 @@ model DeviceConnectivityEvent {
   lastHeartbeatAt DateTime? @map("last_heartbeat_at")
   ageSeconds      Int?      @map("age_seconds")
   expiresAt       DateTime? @map("expires_at")
+  context         Json?     @map("context")
   createdAt       DateTime  @default(now()) @map("created_at")
 
   @@index([deviceId, detectedAt])
@@ -302,6 +307,7 @@ model Alert {
   title                  String
   message                String
   connectivityState      String?                @map("connectivity_state")
+  context                Json?                  @map("context")
   dedupKey               String?                @unique @map("dedup_key")
   openedAt               DateTime               @default(now()) @map("opened_at")
   lastDetectedAt         DateTime               @default(now()) @map("last_detected_at")

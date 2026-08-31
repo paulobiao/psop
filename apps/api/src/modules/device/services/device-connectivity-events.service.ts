@@ -14,6 +14,7 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { AlertService } from '../../alert/services/alert.service.js';
+import type { ConnectivityContext } from '../../alert/types/connectivity-context.type.js';
 import {
   DeviceRepository,
   DeviceWithSite,
@@ -31,6 +32,17 @@ export class DeviceConnectivityEventsService {
   private readonly documentClient: DynamoDBDocumentClient;
   private readonly demoEvents =
     new Map<string, Record<string, unknown>[]>();
+
+  /**
+   * Deterministic anti-flapping guard. Keyed by device id, it counts how many
+   * consecutive evaluations have shown a debounced OFFLINE before the
+   * transition is committed. In-memory on purpose: a process restart just
+   * re-arms the guard (conservative), and it introduces no timers/sleeps.
+   */
+  private readonly flapGuard =
+    new Map<string, { state: string; count: number }>();
+
+  private readonly flapMinConsecutive: number;
 
   constructor(
     configService: ConfigService,
@@ -50,6 +62,14 @@ export class DeviceConnectivityEventsService {
       configService.get<string>('CONNECTIVITY_EVENT_RETENTION_DAYS') ?? '90',
     );
 
+    const flapRaw = Number(
+      configService.get<string>('CONNECTIVITY_FLAP_MIN_CONSECUTIVE') ?? '1',
+    );
+    this.flapMinConsecutive =
+      Number.isFinite(flapRaw) && flapRaw >= 1
+        ? Math.floor(flapRaw)
+        : 1;
+
     this.documentClient = DynamoDBDocumentClient.from(
       new DynamoDBClient({
         region,
@@ -63,6 +83,13 @@ export class DeviceConnectivityEventsService {
     );
     const events: Record<string, unknown>[] = [];
 
+    const deviceNameById = new Map(
+      fleet.devices.map((snapshot) => [
+        snapshot.device.id,
+        snapshot.device.name,
+      ]),
+    );
+
     try {
       for (const snapshot of fleet.devices) {
         const partitionKey = snapshot.device.id;
@@ -71,11 +98,49 @@ export class DeviceConnectivityEventsService {
         const previousState = this.toString(previous?.current_state);
         const currentState = snapshot.connectivity.state;
 
-        await this.synchronizeAlert(snapshot);
+        const context = this.buildContext(snapshot, deviceNameById);
+
+        if (currentState !== 'OFFLINE') {
+          this.flapGuard.delete(partitionKey);
+        }
 
         if (previousState === currentState) {
+          if (currentState !== 'ONLINE') {
+            await this.alertService.touchConnectivityAlert(
+              snapshot.device.id,
+              context,
+            );
+          }
+
           continue;
         }
+
+        if (
+          this.flapMinConsecutive > 1 &&
+          this.isDebouncedOfflineTransition(
+            snapshot,
+            previousState,
+            currentState,
+          )
+        ) {
+          const pending = this.flapGuard.get(partitionKey);
+          const count =
+            pending?.state === currentState ? pending.count + 1 : 1;
+
+          this.flapGuard.set(partitionKey, {
+            state: currentState,
+            count,
+          });
+
+          if (count < this.flapMinConsecutive) {
+            // Not yet confirmed — hold the previous state for this cycle.
+            continue;
+          }
+        }
+
+        this.flapGuard.delete(partitionKey);
+
+        await this.synchronizeAlert(snapshot, context);
 
         const now = new Date();
         const timestamp = now.getTime();
@@ -94,6 +159,7 @@ export class DeviceConnectivityEventsService {
           last_heartbeat_at: snapshot.connectivity.lastHeartbeatAt,
           age_seconds: snapshot.connectivity.ageSeconds,
           expires_at: Math.floor(timestamp / 1000) + this.retentionDays * 86400,
+          context,
         };
 
         if (
@@ -307,9 +373,14 @@ export class DeviceConnectivityEventsService {
     snapshot: Awaited<
       ReturnType<DeviceTelemetryService['findFleet']>
     >['devices'][number],
+    context: ConnectivityContext,
   ): Promise<void> {
     if (snapshot.connectivity.state === 'ONLINE') {
-      await this.alertService.resolveConnectivityAlert(snapshot.device.id);
+      await this.alertService.resolveConnectivityAlert(
+        snapshot.device.id,
+        'ONLINE',
+        context,
+      );
       return;
     }
 
@@ -319,7 +390,81 @@ export class DeviceConnectivityEventsService {
       siteCode: snapshot.device.siteCode,
       externalId: snapshot.device.externalId,
       state: snapshot.connectivity.state,
+      context,
     });
+  }
+
+  /**
+   * Anti-flapping applies ONLY to a direct device going OFFLINE because its
+   * heartbeat is overdue. Recorder-verified / authoritative reported OFFLINE
+   * keeps its immediate response — the recorder is an authoritative source.
+   */
+  private isDebouncedOfflineTransition(
+    snapshot: Awaited<
+      ReturnType<DeviceTelemetryService['findFleet']>
+    >['devices'][number],
+    previousState: string | null,
+    currentState: string,
+  ): boolean {
+    if (currentState !== 'OFFLINE') {
+      return false;
+    }
+
+    if (previousState === 'OFFLINE') {
+      return false;
+    }
+
+    if (snapshot.monitoring.source !== 'DIRECT') {
+      return false;
+    }
+
+    const reasons = snapshot.connectivity.reasons;
+
+    return (
+      reasons.includes('HEARTBEAT_OVERDUE') &&
+      !reasons.includes('REPORTED_OFFLINE') &&
+      !reasons.includes('RECORDER_VERIFIED_OFFLINE')
+    );
+  }
+
+  private buildContext(
+    snapshot: Awaited<
+      ReturnType<DeviceTelemetryService['findFleet']>
+    >['devices'][number],
+    deviceNameById: Map<string, string>,
+  ): ConnectivityContext {
+    const observerDeviceId = snapshot.monitoring.observerDeviceId;
+
+    const linkState = snapshot.connectivity.linkState;
+    const healthState = snapshot.health.state;
+
+    const dimension: 'CONNECTIVITY' | 'HEALTH' =
+      linkState === 'ONLINE' &&
+      (healthState === 'DEGRADED' || healthState === 'CRITICAL')
+        ? 'HEALTH'
+        : 'CONNECTIVITY';
+
+    return {
+      reasons: snapshot.connectivity.reasons,
+      monitoringSource: snapshot.monitoring.source,
+      individualVerification: snapshot.monitoring.individualVerification,
+      observerDeviceId,
+      observerDeviceName: observerDeviceId
+        ? deviceNameById.get(observerDeviceId) ?? null
+        : null,
+      channelId: snapshot.telemetry?.channelId ?? null,
+      channelNumber: snapshot.telemetry?.channelNumber ?? null,
+      lastHeartbeatAt: snapshot.connectivity.lastHeartbeatAt,
+      ageSeconds: snapshot.connectivity.ageSeconds,
+      dimension,
+      linkState,
+      healthState,
+      healthReasons: snapshot.health.reasons.map((reason) => reason.code),
+      collectionState: snapshot.collection.state,
+      collectionIssues: snapshot.collection.issues.map(
+        (issue) => issue.code,
+      ),
+    };
   }
 
   private async findLatestEvent(

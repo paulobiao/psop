@@ -934,9 +934,22 @@ describe(
             })
             .expect(201);
 
+        // Compatibility alias still collapses health degradation into the
+        // legacy connectivity.state value.
         expect(
           degraded.body
             .connectivity.state,
+        ).toBe('DEGRADED');
+
+        // The true connectivity dimension stays ONLINE — the equipment is
+        // reachable, it is just operationally degraded.
+        expect(
+          degraded.body
+            .connectivity.linkState,
+        ).toBe('ONLINE');
+
+        expect(
+          degraded.body.health.state,
         ).toBe('DEGRADED');
 
         expect(
@@ -944,7 +957,7 @@ describe(
             .connectivity.reasons,
         ).toEqual(
           expect.arrayContaining([
-            'REPORTED_STATUS_NOT_HEALTHY',
+            'DEVICE_REPORTED_WARNING',
             'HIGH_TEMPERATURE',
             'HIGH_STORAGE_USAGE',
           ]),

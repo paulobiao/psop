@@ -12,6 +12,9 @@ describe('AlertRepository connectivity incident severity', () => {
         upsert: jest.fn().mockResolvedValue({
           id: 'alert-1',
         }),
+        updateMany: jest.fn().mockResolvedValue({
+          count: 1,
+        }),
       },
     };
 
@@ -26,6 +29,17 @@ describe('AlertRepository connectivity incident severity', () => {
     title: 'Connectivity incident',
     message: 'Connectivity changed',
     connectivityState: 'UNKNOWN',
+    context: {
+      reasons: ['HEARTBEAT_OVERDUE'],
+      monitoringSource: 'DIRECT',
+      individualVerification: 'DIRECT',
+      observerDeviceId: null,
+      observerDeviceName: null,
+      channelId: null,
+      channelNumber: null,
+      lastHeartbeatAt: null,
+      ageSeconds: 120,
+    },
   };
 
   it('does not downgrade an open CRITICAL incident to WARNING', async () => {
@@ -84,5 +98,70 @@ describe('AlertRepository connectivity incident severity', () => {
         }),
       }),
     );
+  });
+
+  it('persists the operational context on open', async () => {
+    const { repository, prisma } =
+      createRepository(null);
+
+    await repository.openConnectivityAlert({
+      ...baseInput,
+      severity: 'CRITICAL',
+    });
+
+    expect(prisma.alert.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          context: baseInput.context,
+        }),
+        create: expect.objectContaining({
+          context: baseInput.context,
+        }),
+      }),
+    );
+  });
+});
+
+describe('AlertRepository touchActiveConnectivityAlert', () => {
+  it('updates only the open connectivity alert for the device without touching severity', async () => {
+    const prisma = {
+      alert: {
+        updateMany: jest.fn().mockResolvedValue({
+          count: 1,
+        }),
+      },
+    };
+
+    const repository = new AlertRepository(
+      prisma as any,
+    );
+
+    const context = {
+      reasons: ['HEARTBEAT_OVERDUE'],
+      monitoringSource: 'DIRECT',
+      individualVerification: 'DIRECT',
+      observerDeviceId: null,
+      observerDeviceName: null,
+      channelId: null,
+      channelNumber: null,
+      lastHeartbeatAt: null,
+      ageSeconds: 45,
+    };
+
+    await repository.touchActiveConnectivityAlert(
+      'device-1',
+      context,
+    );
+
+    expect(prisma.alert.updateMany).toHaveBeenCalledWith({
+      where: {
+        deviceId: 'device-1',
+        type: 'DEVICE_CONNECTIVITY',
+        status: 'OPEN',
+      },
+      data: expect.objectContaining({
+        context,
+      }),
+    });
   });
 });

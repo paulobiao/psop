@@ -21,17 +21,21 @@ const BASE = {
 };
 
 describe('DeviceHealthService recorder-observation semantics', () => {
-  it('returns UNKNOWN when recorder evidence is stale', () => {
+  it('9. stale recorder observation -> link UNKNOWN', () => {
     const result = createService().evaluate({
       ...BASE,
       nowSeconds: 161,
+      isRecorderObserved: true,
       staleTelemetryIsUnknown: true,
     });
 
-    expect(result.state).toBe('UNKNOWN');
-    expect(result.reasons).toEqual(['STALE_OBSERVATION']);
-    expect(result.ageSeconds).toBe(61);
-    expect(result.offlineAfterSeconds).toBe(60);
+    expect(result.connectivity.linkState).toBe('UNKNOWN');
+    expect(result.connectivity.reasons.map((r) => r.code)).toEqual([
+      'STALE_OBSERVATION',
+    ]);
+    expect(result.connectivity.ageSeconds).toBe(61);
+    expect(result.connectivity.offlineAfterSeconds).toBe(60);
+    expect(result.health.state).toBe('UNKNOWN');
   });
 
   it('preserves heartbeat-overdue OFFLINE for direct telemetry', () => {
@@ -40,20 +44,50 @@ describe('DeviceHealthService recorder-observation semantics', () => {
       nowSeconds: 161,
     });
 
-    expect(result.state).toBe('OFFLINE');
-    expect(result.reasons).toEqual(['HEARTBEAT_OVERDUE']);
+    expect(result.connectivity.linkState).toBe('OFFLINE');
+    expect(result.connectivity.reasons.map((r) => r.code)).toEqual([
+      'HEARTBEAT_OVERDUE',
+    ]);
   });
 
-  it('accepts fresh authoritative recorder OFFLINE evidence', () => {
+  it('10. fresh authoritative recorder OFFLINE -> immediate link OFFLINE, child health CRITICAL', () => {
     const result = createService().evaluate({
       ...BASE,
       reportedStatus: 'offline',
       reportedOfflineIsAuthoritative: true,
+      isRecorderObserved: true,
       staleTelemetryIsUnknown: true,
+      observerDeviceId: 'recorder-1',
+      channelNumber: 1,
       nowSeconds: 101,
     });
 
-    expect(result.state).toBe('OFFLINE');
-    expect(result.reasons).toEqual(['REPORTED_OFFLINE']);
+    expect(result.connectivity.linkState).toBe('OFFLINE');
+    expect(result.connectivity.state).toBe('OFFLINE');
+    expect(result.connectivity.reasons.map((r) => r.code)).toEqual([
+      'REPORTED_OFFLINE',
+      'RECORDER_VERIFIED_OFFLINE',
+    ]);
+    expect(result.health.state).toBe('CRITICAL');
+    // The persisted / legacy reason list never leaks the health code while
+    // the link is OFFLINE.
+    expect(result.connectivity.legacyReasons).toEqual([
+      'REPORTED_OFFLINE',
+      'RECORDER_VERIFIED_OFFLINE',
+    ]);
+  });
+
+  it('does not add RECORDER_VERIFIED_OFFLINE for a direct device reporting offline', () => {
+    const result = createService().evaluate({
+      ...BASE,
+      reportedStatus: 'offline',
+      reportedOfflineIsAuthoritative: true,
+      isRecorderObserved: false,
+      nowSeconds: 101,
+    });
+
+    expect(result.connectivity.reasons.map((r) => r.code)).toEqual([
+      'REPORTED_OFFLINE',
+    ]);
   });
 });
