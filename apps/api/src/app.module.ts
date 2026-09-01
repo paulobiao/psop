@@ -5,6 +5,7 @@ import { HealthModule } from './modules/health/health.module';
 import { SiteModule } from './modules/site/site.module';
 import { DeviceModule } from './modules/device/device.module';
 import { OperationsModule } from './modules/operations/operations.module';
+import { ReliabilityModule } from './modules/reliability/reliability.module';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
@@ -22,6 +23,7 @@ import { UserModule } from './modules/user/user.module';
     SiteModule,
     DeviceModule,
     OperationsModule,
+    ReliabilityModule,
   ],
 })
 export class AppModule {}
