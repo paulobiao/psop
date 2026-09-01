@@ -3,6 +3,7 @@ import { AlertModule } from '../alert/alert.module.js';
 import { DeviceController } from './controllers/device.controller.js';
 import { TelemetryIngestionController } from './controllers/telemetry-ingestion.controller.js';
 import { DeviceRepository } from './repositories/device.repository.js';
+import { DeviceAvailabilityService } from './services/device-availability.service.js';
 import { DeviceConnectivityEventsService } from './services/device-connectivity-events.service.js';
 import { DeviceConnectivityMonitorService } from './services/device-connectivity-monitor.service.js';
 import { EdgeAgentRuntimeService } from './services/edge-agent-runtime.service.js';
@@ -24,6 +25,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
   providers: [
     DeviceService,
     DeviceTelemetryService,
+    DeviceAvailabilityService,
     DeviceConnectivityEventsService,
     DeviceConnectivityMonitorService,
     DeviceHealthService,
@@ -39,6 +41,7 @@ import { TelemetryDemoService } from './services/telemetry-demo.service.js';
     DeviceService,
     DeviceTelemetryService,
     DeviceIntelligenceService,
+    DeviceAvailabilityService,
     DeviceConnectivityEventsService,
     EdgeAgentRuntimeService,
     TelemetryDemoService,

@@ -7,13 +7,16 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import type { AuthUser } from '../../auth/auth.types.js';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
+import { DeviceAvailabilityQueryDto } from '../dto/device-availability-query.dto.js';
 import { SetDemoTelemetryStateDto } from '../dto/set-demo-telemetry-state.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
+import { DeviceAvailabilityService } from '../services/device-availability.service.js';
 import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
 import { DeviceIntelligenceService } from '../services/device-intelligence.service.js';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
@@ -33,6 +36,7 @@ export class DeviceController {
     private readonly telemetryDemoService: TelemetryDemoService,
     private readonly telemetryIngestionService: DeviceTelemetryIngestionService,
     private readonly deviceIntelligenceService: DeviceIntelligenceService,
+    private readonly deviceAvailabilityService: DeviceAvailabilityService,
   ) {}
 
   @Get()
@@ -127,6 +131,19 @@ export class DeviceController {
     return this.deviceIntelligenceService.getIntelligence(
       id,
       user.organizationId,
+    );
+  }
+
+  @Get(':id/availability')
+  findAvailability(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: DeviceAvailabilityQueryDto,
+  ) {
+    return this.deviceAvailabilityService.getAvailability(
+      id,
+      user.organizationId,
+      query,
     );
   }
 

@@ -27,6 +27,16 @@ import { LocalTelemetryService } from './local-telemetry.service.js';
 export class DeviceConnectivityEventsService {
   private readonly logger = new Logger(DeviceConnectivityEventsService.name);
 
+  /** Safety cap on how many transition rows one availability query will page. */
+  private static readonly EVENT_WINDOW_CAP = 5000;
+
+  /**
+   * Upper bound on how many recent transitions are scanned to reconstruct the
+   * start of a currently-open outage. The monitor only writes on state change,
+   * so an OFFLINE run is normally 1–2 rows; this is deliberately generous.
+   */
+  private static readonly CURRENT_OUTAGE_SCAN_CAP = 500;
+
   private readonly tableName: string;
   private readonly retentionDays: number;
   private readonly documentClient: DynamoDBDocumentClient;
@@ -367,6 +377,199 @@ export class DeviceConnectivityEventsService {
       device: this.deviceSummary(device),
       events: events!,
     };
+  }
+
+  /**
+   * Raw connectivity-transition history for one device, used by the
+   * availability reconstruction. Returns the transitions inside
+   * `[windowStart, windowEnd]` (ascending) plus the single latest transition
+   * strictly before `windowStart` (the "anchor" state).
+   *
+   * This method does NOT authorise the caller — `DeviceAvailabilityService`
+   * has already resolved the device inside the caller's organization.
+   */
+  async collectEventWindow(
+    deviceId: string,
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<{
+    anchor: Record<string, unknown> | null;
+    events: Record<string, unknown>[];
+    truncated: boolean;
+  }> {
+    const cap = DeviceConnectivityEventsService.EVENT_WINDOW_CAP;
+
+    if (this.telemetryDemoService.isEnabled()) {
+      // demoEvents is stored newest-first, capped at 50.
+      const all = [...(this.demoEvents.get(deviceId) ?? [])].sort(
+        (first, second) =>
+          this.toTimestamp(first.timestamp) -
+          this.toTimestamp(second.timestamp),
+      );
+
+      const startMs = windowStart.getTime();
+      const endMs = windowEnd.getTime();
+
+      const events = all.filter((event) => {
+        const ts = this.toTimestamp(event.timestamp);
+        return ts >= startMs && ts <= endMs;
+      });
+
+      const anchor =
+        [...all]
+          .reverse()
+          .find(
+            (event) => this.toTimestamp(event.timestamp) < startMs,
+          ) ?? null;
+
+      return { anchor, events, truncated: false };
+    }
+
+    if (this.localTelemetryService.isEnabled()) {
+      const { anchor, events } =
+        await this.localTelemetryService.findEventsInWindow(
+          deviceId,
+          windowStart,
+          windowEnd,
+          cap + 1,
+        );
+
+      const truncated = events.length > cap;
+
+      return {
+        anchor,
+        events: truncated ? events.slice(0, cap) : events,
+        truncated,
+      };
+    }
+
+    try {
+      const inWindow: Record<string, unknown>[] = [];
+      let exclusiveStartKey:
+        | Record<string, unknown>
+        | undefined;
+
+      do {
+        const response = await this.documentClient.send(
+          new QueryCommand({
+            TableName: this.tableName,
+            KeyConditionExpression:
+              'camera_id = :cameraId AND #ts BETWEEN :start AND :end',
+            ExpressionAttributeNames: {
+              '#ts': 'timestamp',
+            },
+            ExpressionAttributeValues: {
+              ':cameraId': deviceId,
+              ':start': windowStart.getTime(),
+              ':end': windowEnd.getTime(),
+            },
+            ScanIndexForward: true,
+            ExclusiveStartKey: exclusiveStartKey,
+          }),
+        );
+
+        inWindow.push(...(response.Items ?? []));
+        exclusiveStartKey = response.LastEvaluatedKey;
+      } while (exclusiveStartKey && inWindow.length <= cap);
+
+      const anchorResponse = await this.documentClient.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression:
+            'camera_id = :cameraId AND #ts < :start',
+          ExpressionAttributeNames: {
+            '#ts': 'timestamp',
+          },
+          ExpressionAttributeValues: {
+            ':cameraId': deviceId,
+            ':start': windowStart.getTime(),
+          },
+          ScanIndexForward: false,
+          Limit: 1,
+        }),
+      );
+
+      const truncated = inWindow.length > cap;
+
+      return {
+        anchor: anchorResponse.Items?.[0] ?? null,
+        events: truncated ? inWindow.slice(0, cap) : inWindow,
+        truncated,
+      };
+    } catch (error) {
+      this.handleStorageError(error);
+    }
+  }
+
+  /**
+   * The most recent connectivity transitions for one device (newest first),
+   * within the retention horizon and capped at `CURRENT_OUTAGE_SCAN_CAP`. Used
+   * by `DeviceAvailabilityService` to reconstruct where the *currently open*
+   * outage began, independently of any requested availability window.
+   *
+   * Read-only. The caller (`DeviceAvailabilityService`) has already resolved
+   * the device inside the caller's organization.
+   */
+  async findRecentTransitions(
+    deviceId: string,
+    now: Date,
+  ): Promise<Record<string, unknown>[]> {
+    const cap = DeviceConnectivityEventsService.CURRENT_OUTAGE_SCAN_CAP;
+    const since = new Date(
+      now.getTime() - this.retentionDays * 86400 * 1000,
+    );
+    const sinceMs = since.getTime();
+
+    if (this.telemetryDemoService.isEnabled()) {
+      return [...(this.demoEvents.get(deviceId) ?? [])]
+        .filter((event) => this.toTimestamp(event.timestamp) >= sinceMs)
+        .sort(
+          (first, second) =>
+            this.toTimestamp(second.timestamp) -
+            this.toTimestamp(first.timestamp),
+        )
+        .slice(0, cap);
+    }
+
+    if (this.localTelemetryService.isEnabled()) {
+      return this.localTelemetryService.findRecentEventsByDevice(
+        deviceId,
+        since,
+        cap,
+      );
+    }
+
+    try {
+      const items: Record<string, unknown>[] = [];
+      let exclusiveStartKey: Record<string, unknown> | undefined;
+
+      do {
+        const response = await this.documentClient.send(
+          new QueryCommand({
+            TableName: this.tableName,
+            KeyConditionExpression:
+              'camera_id = :cameraId AND #ts >= :since',
+            ExpressionAttributeNames: {
+              '#ts': 'timestamp',
+            },
+            ExpressionAttributeValues: {
+              ':cameraId': deviceId,
+              ':since': sinceMs,
+            },
+            ScanIndexForward: false,
+            Limit: cap,
+            ExclusiveStartKey: exclusiveStartKey,
+          }),
+        );
+
+        items.push(...(response.Items ?? []));
+        exclusiveStartKey = response.LastEvaluatedKey;
+      } while (exclusiveStartKey && items.length < cap);
+
+      return items.slice(0, cap);
+    } catch (error) {
+      this.handleStorageError(error);
+    }
   }
 
   private async synchronizeAlert(
