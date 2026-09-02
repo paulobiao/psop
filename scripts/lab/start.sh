@@ -138,6 +138,11 @@ else
 fi
 
 # --- 6. Speco NVR watcher -------------------------------------------
+#
+# Speco is the one lab service with an explicit, fail-closed runtime
+# selection (docs/LAB_RUNTIME.md): it never falls back to "whatever is
+# checked out in this worktree" — that exact behavior previously produced
+# a multi-hour incident with a stale pre-fix watcher against real hardware.
 
 log "==> Speco NVR watcher"
 ext_speco="$(pgrep -f -U "$(id -u)" 'speco_n8nrl.py' 2>/dev/null || true)"
@@ -146,22 +151,45 @@ if service_running speco; then
 elif [ -n "$ext_speco" ]; then
   warn "    A speco_n8nrl.py process is already running (pid(s): ${ext_speco//$'\n'/ }) — not starting another"
 else
-  SPECO_PW="$(speco_password_from_keychain || true)"
-  if [ -z "$SPECO_PW" ]; then
-    speco_keychain_hint
-    warn "    Skipping Speco watcher until the Keychain entry exists."
+  SPECO_RUNTIME_DIR="$(speco_runtime_dir_resolve)"
+  SPECO_RUNTIME_CHECK="$(speco_runtime_check "$SPECO_RUNTIME_DIR")"
+
+  if [ "$SPECO_RUNTIME_CHECK" != "OK" ]; then
+    warn "    Speco runtime is not ready — refusing to start (fail-closed)."
+    warn "    $(speco_runtime_check_message "$SPECO_RUNTIME_CHECK" "$SPECO_RUNTIME_DIR")"
+    if [ "$SPECO_RUNTIME_CHECK" = "NOT_CONFIGURED" ]; then
+      warn "    Configure it once with either:"
+      warn "      export PSOP_SPECO_RUNTIME_DIR=/path/to/runtime/apps/gateway"
+      warn "    or add a line to $(_lab_runtime_env_file):"
+      warn "      PSOP_SPECO_RUNTIME_DIR=/path/to/runtime/apps/gateway"
+    fi
+    warn "    See docs/LAB_RUNTIME.md. Skipping Speco watcher."
   else
-    log "    starting: python3 apps/gateway/speco_n8nrl.py --watch --interval 30"
-    # Exported into the environment only (never on a command line, so it does
-    # not appear in `ps`); the already-forked child keeps its copy after unset.
-    export PSOP_SPECO_PASSWORD="$SPECO_PW"
-    pid="$(spawn speco \
-      bash -c "cd '$REPO_ROOT/apps/gateway' && exec python3 speco_n8nrl.py --watch --interval 30")"
-    unset PSOP_SPECO_PASSWORD SPECO_PW
-    nap 2
-    service_running speco \
-      && { log "    speco pid ${pid} — log: $(logfile speco)"; ok "    Speco watcher started"; } \
-      || { err "    Speco watcher exited immediately. Last log lines:"; tail -n 20 "$(logfile speco)" >&2 || true; }
+    SPECO_CONFIG_DIR="$(speco_config_dir_resolve)"
+    SPECO_PW="$(speco_password_from_keychain "$SPECO_CONFIG_DIR" || true)"
+    if [ -z "$SPECO_PW" ]; then
+      speco_keychain_hint "$SPECO_CONFIG_DIR"
+      warn "    Skipping Speco watcher until the Keychain entry exists."
+    else
+      log "    runtime: ${SPECO_RUNTIME_DIR} (source: $(speco_runtime_dir_source))"
+      log "    starting: python3 speco_n8nrl.py --watch --interval 30"
+      # Exported into the environment only (never on a command line, so it does
+      # not appear in `ps`); the already-forked child keeps its copy after unset.
+      export PSOP_SPECO_PASSWORD="$SPECO_PW"
+      pid="$(spawn speco \
+        bash -c "cd '$SPECO_RUNTIME_DIR' && exec python3 speco_n8nrl.py --watch --interval 30")"
+      unset PSOP_SPECO_PASSWORD SPECO_PW
+      nap 2
+      if service_running speco; then
+        speco_runtime_metadata_write "$SPECO_RUNTIME_DIR" \
+          "$(speco_runtime_head "$SPECO_RUNTIME_DIR")" "$SPECO_RUNTIME_CHECK"
+        log "    speco pid ${pid} — log: $(logfile speco)"
+        ok "    Speco watcher started"
+      else
+        err "    Speco watcher exited immediately. Last log lines:"
+        tail -n 20 "$(logfile speco)" >&2 || true
+      fi
+    fi
   fi
 fi
 

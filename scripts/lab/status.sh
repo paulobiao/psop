@@ -42,14 +42,53 @@ else
 fi
 
 # --- Speco watcher -----------------------------------------------
+#
+# Speco gets a richer status block than the other services: it is the one
+# service with an explicit runtime selection and a minimum-commit guard
+# (docs/LAB_RUNTIME.md), so status shows exactly what code is live and
+# whether it satisfies that guard — never trusting recorded metadata alone,
+# always re-deriving from the live process (pid_cwd) and a fresh git check.
 if service_running speco; then
-  row "Speco" "$(st_running)"; detail "pid $(read_pid speco) — speco_n8nrl.py --watch"
+  pid="$(read_pid speco)"
+  row "Speco" "$(st_running)"; detail "pid ${pid} — speco_n8nrl.py --watch"
+
+  real_cwd="$(pid_cwd "$pid")"
+  meta_dir="$(speco_runtime_metadata_get PSOP_SPECO_RUNTIME_DIR || true)"
+
+  # Ground truth for "what is actually running" is the live process cwd,
+  # not the recorded metadata (which could predate a manual restart).
+  effective_dir="${real_cwd:-$meta_dir}"
+
+  if [ -n "$real_cwd" ]; then
+    detail "runtime  ${real_cwd}"
+  else
+    detail "runtime  ${c_yellow}unknown (could not read live cwd)${c_reset}"
+  fi
+
+  if [ -n "$meta_dir" ] && [ -n "$real_cwd" ] && ! speco_cwd_matches "$real_cwd" "$meta_dir"; then
+    detail "${c_yellow}WARNING: live cwd differs from the runtime recorded at start (${meta_dir}) — was this process started outside lab:start?${c_reset}"
+  fi
+
+  if [ -n "$effective_dir" ]; then
+    head="$(speco_runtime_head "$effective_dir" || true)"
+    check="$(speco_runtime_check "$effective_dir")"
+    detail "git HEAD ${head:-unknown}"
+    if [ "$check" = "OK" ]; then
+      detail "min fix  ${SPECO_MIN_FIX_COMMIT:0:7} OK"
+    else
+      detail "${c_red}INVALID RUNTIME: $(speco_runtime_check_message "$check" "$effective_dir")${c_reset}"
+    fi
+  fi
 elif ext="$(pgrep -f -U "$(id -u)" 'speco_n8nrl.py' 2>/dev/null)" && [ -n "$ext" ]; then
   row "Speco" "$(st_running)"; detail "pid(s) ${ext//$'\n'/ } (not managed by this lab)"
 elif pid="$(read_pid speco)" && [ -f "$(pidfile speco)" ]; then
   row "Speco" "$(st_offline)"; detail "tracked pid ${pid} is gone"
 else
   row "Speco" "$(st_offline)"
+  configured_dir="$(speco_runtime_dir_resolve)"
+  if [ -z "$configured_dir" ]; then
+    detail "runtime not configured — see docs/LAB_RUNTIME.md"
+  fi
 fi
 
 # --- Lorex gateway ---------------------------------------------

@@ -159,26 +159,35 @@ pg_online() {
 }
 
 # --- Speco password (macOS Keychain) ----------------------------------
+#
+# These read from an explicit config directory (see "Speco runtime
+# selection" below) rather than a hardcoded $REPO_ROOT path, so the lab
+# manager's own config lookup follows the same explicit-directory
+# discipline as the runtime code it spawns.
 
 speco_env_get() {
-  local f="$REPO_ROOT/apps/gateway/.env.speco.local"
+  local key="$1" dir="$2" f
+  f="$dir/.env.speco.local"
   [ -f "$f" ] || return 1
-  grep -E "^$1=" "$f" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'
+  grep -E "^${key}=" "$f" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'
 }
 
 speco_kc_account() {
-  local a; a="$(speco_env_get PSOP_SPECO_USERNAME || true)"
+  local dir="$1" a
+  a="$(speco_env_get PSOP_SPECO_USERNAME "$dir" || true)"
   printf '%s' "${a:-psop_reader}"
 }
 
 # Prints the password on stdout, or nothing (and returns 1) if not in Keychain.
 speco_password_from_keychain() {
-  local acct; acct="$(speco_kc_account)"
+  local dir="$1" acct
+  acct="$(speco_kc_account "$dir")"
   security find-generic-password -s "$SPECO_KC_SERVICE" -a "$acct" -w 2>/dev/null
 }
 
 speco_keychain_hint() {
-  local acct; acct="$(speco_kc_account)"
+  local dir="$1" acct
+  acct="$(speco_kc_account "$dir")"
   cat >&2 <<EOF
 
 ${c_yellow}Speco NVR password is not in the macOS Keychain yet.${c_reset}
@@ -189,6 +198,196 @@ is not echoed, not stored in shell history, and never written into the repo:
 
 Then run '${c_green}pnpm lab:start${c_reset}' again and the Speco watcher will start automatically.
 EOF
+}
+
+# --- Speco runtime selection (explicit, fail-closed) ---------------------
+#
+# The Speco watcher executes real code against real hardware (an NVR and
+# its child cameras). Unlike the other lab services, it must never fall
+# back silently to "whatever commit happens to be checked out in the
+# worktree these scripts live in" — that exact failure mode produced a
+# multi-hour incident where a stale pre-fix watcher kept renewing a fake
+# ONLINE heartbeat while the NVR was physically unreachable. See
+# docs/LAB_RUNTIME.md for the full incident and the design this codifies.
+
+# The commit that introduced recorderReachable/watch_tick/RELOGIN_ semantics
+# ("fix: stop stale Speco heartbeats when recorder is unreachable"). Any
+# runtime directory must have this commit as an ancestor of its HEAD.
+# Overridable (e.g. by tests); not meant to be changed for normal use.
+SPECO_MIN_FIX_COMMIT="${SPECO_MIN_FIX_COMMIT:-2ff1239292461bba2bde2c5af7a248cbda275d05}"
+
+_lab_runtime_env_file() { printf '%s/runtime.env' "$LAB_DIR"; }
+
+# lab_runtime_env_get KEY - safe, non-eval reader for .psop-lab/runtime.env.
+# Only a fixed whitelist of keys is accepted, plain "KEY=value" lines are
+# parsed by hand, and the file is never sourced/eval'd.
+lab_runtime_env_get() {
+  local key="$1" f line value
+  case "$key" in
+    PSOP_SPECO_RUNTIME_DIR|PSOP_SPECO_CONFIG_DIR) ;;
+    *) return 1 ;;
+  esac
+  f="$(_lab_runtime_env_file)"
+  [ -f "$f" ] || return 1
+  line="$(grep -E "^${key}=" "$f" 2>/dev/null | tail -1)" || true
+  [ -n "$line" ] || return 1
+  value="${line#*=}"
+  value="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  case "$value" in
+    \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    \'*\') value="${value#\'}"; value="${value%\'}" ;;
+  esac
+  [ -n "$value" ] || return 1
+  printf '%s' "$value"
+}
+
+# speco_runtime_dir_resolve - PSOP_SPECO_RUNTIME_DIR env var, else
+# .psop-lab/runtime.env, else EMPTY. Deliberately no fallback to
+# $REPO_ROOT/apps/gateway — see the module comment above.
+speco_runtime_dir_resolve() {
+  if [ -n "${PSOP_SPECO_RUNTIME_DIR:-}" ]; then
+    printf '%s' "$PSOP_SPECO_RUNTIME_DIR"
+    return 0
+  fi
+  lab_runtime_env_get PSOP_SPECO_RUNTIME_DIR
+}
+
+# speco_runtime_dir_source - which of the two sources above resolved the
+# runtime dir (or "none"), for diagnostic messages.
+speco_runtime_dir_source() {
+  if [ -n "${PSOP_SPECO_RUNTIME_DIR:-}" ]; then
+    printf 'environment variable PSOP_SPECO_RUNTIME_DIR'
+  elif lab_runtime_env_get PSOP_SPECO_RUNTIME_DIR >/dev/null 2>&1; then
+    printf '%s' "$(_lab_runtime_env_file)"
+  else
+    printf 'none'
+  fi
+}
+
+# speco_config_dir_resolve - where the lab manager itself reads
+# .env.speco.local from (to look up the Keychain account name). Unlike the
+# runtime dir, this HAS a safe default: PSOP_SPECO_CONFIG_DIR env var, else
+# .psop-lab/runtime.env, else $REPO_ROOT/apps/gateway (this worktree's
+# existing local config — unchanged from before runtime selection existed).
+# Config is local, gitignored data, not executable code, so defaulting it
+# does not reintroduce the stale-code risk that runtime dir selection
+# guards against.
+speco_config_dir_resolve() {
+  if [ -n "${PSOP_SPECO_CONFIG_DIR:-}" ]; then
+    printf '%s' "$PSOP_SPECO_CONFIG_DIR"
+    return 0
+  fi
+  local v
+  if v="$(lab_runtime_env_get PSOP_SPECO_CONFIG_DIR)"; then
+    printf '%s' "$v"
+    return 0
+  fi
+  printf '%s/apps/gateway' "$REPO_ROOT"
+}
+
+speco_runtime_head() {
+  git -C "$1" rev-parse HEAD 2>/dev/null
+}
+
+# speco_runtime_check DIR [MIN_COMMIT] - the single source of truth used by
+# both lab:start (enforced, fail-closed) and lab:status (displayed,
+# non-fatal). Prints exactly one status token to stdout; returns 0 only
+# for OK. speco_n8nrl.py resolves its own config relative to its own file
+# location (not cwd), so a runtime dir also needs a reachable
+# .env.speco.local next to it (typically a symlink to the config dir) —
+# that is checked here too, not left to fail later inside the Python
+# process.
+speco_runtime_check() {
+  local dir="$1" min="${2:-$SPECO_MIN_FIX_COMMIT}"
+
+  if [ -z "$dir" ]; then
+    printf 'NOT_CONFIGURED'; return 1
+  fi
+  if [ ! -d "$dir" ]; then
+    printf 'NOT_FOUND'; return 1
+  fi
+  if [ ! -f "$dir/speco_n8nrl.py" ]; then
+    printf 'MISSING_FILE'; return 1
+  fi
+  if [ ! -e "$dir/.env.speco.local" ]; then
+    printf 'MISSING_CONFIG'; return 1
+  fi
+  if ! git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'NOT_GIT'; return 1
+  fi
+  if ! git -C "$dir" merge-base --is-ancestor "$min" HEAD 2>/dev/null; then
+    printf 'STALE'; return 1
+  fi
+  if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+    printf 'DIRTY'; return 1
+  fi
+  printf 'OK'; return 0
+}
+
+# speco_runtime_check_message TOKEN DIR [MIN_COMMIT] - human-readable detail
+# for a status token returned by speco_runtime_check.
+speco_runtime_check_message() {
+  local token="$1" dir="$2" min="${3:-$SPECO_MIN_FIX_COMMIT}"
+  case "$token" in
+    NOT_CONFIGURED)
+      printf 'Speco runtime is not configured (set PSOP_SPECO_RUNTIME_DIR, or add it to %s)' \
+        "$(_lab_runtime_env_file)" ;;
+    NOT_FOUND)      printf 'runtime directory does not exist: %s' "$dir" ;;
+    MISSING_FILE)   printf 'speco_n8nrl.py not found in: %s' "$dir" ;;
+    MISSING_CONFIG) printf '.env.speco.local not found in: %s (symlink it from the config directory)' "$dir" ;;
+    NOT_GIT)        printf 'runtime directory is not inside a git worktree: %s' "$dir" ;;
+    STALE)          printf 'runtime HEAD does not have %s (minimum required fix) as an ancestor' "$min" ;;
+    DIRTY)          printf 'runtime has local uncommitted changes (git status is not clean): %s' "$dir" ;;
+    OK)             printf 'runtime OK' ;;
+    *)              printf 'unknown runtime status: %s' "$token" ;;
+  esac
+}
+
+# speco_cwd_matches ACTUAL EXPECTED - normalized comparison used by
+# lab:status to warn when a live process's real cwd disagrees with the
+# runtime directory recorded in metadata (e.g. someone started it by hand).
+speco_cwd_matches() {
+  local actual="${1%/}" expected="${2%/}"
+  [ "$actual" = "$expected" ]
+}
+
+# pid_cwd PID - the real, live working directory of a process (empty if it
+# cannot be determined). Used by lab:status to show ground truth rather
+# than trusting recorded metadata alone.
+pid_cwd() {
+  lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p'
+}
+
+# --- Speco runtime metadata (.psop-lab/speco.runtime) ---------------------
+#
+# A non-sensitive breadcrumb written on a successful start, read by
+# lab:status. Deliberately NOT trusted blindly: status always re-checks the
+# live process and its real cwd too (see pid_cwd / speco_cwd_matches above).
+
+speco_runtime_metadata_file() { printf '%s/speco.runtime' "$LAB_DIR"; }
+
+speco_runtime_metadata_write() {
+  local dir="$1" head="$2" check="$3" f
+  f="$(speco_runtime_metadata_file)"
+  {
+    printf 'PSOP_SPECO_RUNTIME_DIR=%s\n' "$dir"
+    printf 'GIT_HEAD=%s\n' "$head"
+    printf 'MIN_COMMIT_CHECK=%s\n' "$check"
+    printf 'STARTED_AT=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$f"
+}
+
+speco_runtime_metadata_get() {
+  local key="$1" f line
+  case "$key" in
+    PSOP_SPECO_RUNTIME_DIR|GIT_HEAD|MIN_COMMIT_CHECK|STARTED_AT) ;;
+    *) return 1 ;;
+  esac
+  f="$(speco_runtime_metadata_file)"
+  [ -f "$f" ] || return 1
+  line="$(grep -E "^${key}=" "$f" 2>/dev/null | tail -1)" || return 1
+  [ -n "$line" ] || return 1
+  printf '%s' "${line#*=}"
 }
 
 # --- Status line rendering -------------------------------------------
