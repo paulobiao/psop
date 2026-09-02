@@ -435,13 +435,23 @@ class SpecoNRLClient:
     def collect(self) -> dict[str, Any]:
         errors = []
         optional_gaps = []
+        # Track which authenticated CORE recorder calls actually responded.
+        # A CORE source returning without raising is positive proof that the
+        # recorder is reachable AND the session is still valid. Optional
+        # enrichment (queryIPChlInfo, vendor providers) is NEVER proof of
+        # reachability and must not move these sets.
+        core_succeeded: set[str] = set()
+        core_failed: set[str] = set()
 
         def safe(label, func, fallback):
             try:
-                return func()
+                value = func()
             except Exception as error:
+                core_failed.add(label)
                 errors.append({"source": label, "error": f"{type(error).__name__}: {error}"})
                 return fallback
+            core_succeeded.add(label)
+            return value
 
         def optional_safe(label, func, fallback):
             try:
@@ -516,6 +526,13 @@ class SpecoNRLClient:
                          "enabled": poe_port.get("enabled"), "powerW": poe_port.get("powerW")} if poe_port else None),
                 "recordingStreams": streams,
             })
+        # Rule:
+        #   A/B) at least one CORE source responded -> recorderReachable=True
+        #        (PASSED when nothing failed, PARTIAL when some did). An ONLINE
+        #        heartbeat is allowed.
+        #   C)   no CORE source responded           -> recorderReachable=False
+        #        collection is diagnostically UNREACHABLE. No new heartbeat.
+        recorder_reachable = bool(core_succeeded)
         return {
             "test": "PSOP Speco N8NRL read-only diagnosis", "adapterVersion": VERSION,
             "target": "NVR Speco", "host": self.host, "statusSource": "queryOnlineChlList",
@@ -530,7 +547,16 @@ class SpecoNRLClient:
             "channels": channels,
             "poe": poe, "storage": storage, "errors": errors,
             "optionalGaps": optional_gaps,
-            "status": "PASSED" if not errors else "PARTIAL",
+            "recorderReachable": recorder_reachable,
+            "coreSourcesSucceeded": sorted(core_succeeded),
+            "coreSourcesFailed": sorted(core_failed),
+            "status": (
+                "UNREACHABLE"
+                if not recorder_reachable
+                else "PASSED"
+                if not errors
+                else "PARTIAL"
+            ),
         }
 
 
@@ -825,6 +851,17 @@ class PsopRecorderApiClient:
         self,
         result: dict[str, Any],
     ) -> dict[str, Any]:
+        # Defense in depth: this method always emits status="online". If the
+        # collection explicitly did not reach the recorder, refuse rather than
+        # renew the heartbeat with stale/empty data. The caller
+        # (run_psop_once) is expected to skip this entirely.
+        if result.get("recorderReachable") is False:
+            raise SpecoError(
+                "Refusing to emit an ONLINE recorder heartbeat: the "
+                "collection did not reach the recorder "
+                "(recorderReachable=False)"
+            )
+
         recorder = result.get("recorder")
         if not isinstance(recorder, dict):
             recorder = {}
@@ -1240,6 +1277,19 @@ def run_psop_once(
     api: PsopRecorderApiClient,
     mapping: dict[str, Any],
 ) -> dict[str, Any]:
+    if result.get("recorderReachable") is False:
+        # The collection never reached the recorder. Telemetry that old must
+        # not renew the heartbeat: send nothing and let the last real
+        # heartbeat age out. Health Engine V2 then concludes
+        # HEARTBEAT_OVERDUE -> linkState OFFLINE on its own. Children behind
+        # this recorder receive no assertion and age into UNKNOWN.
+        return {
+            "recorderDelivered": False,
+            "childDelivery": "SKIPPED_RECORDER_UNREACHABLE",
+            "observationsSent": 0,
+            "unmappedChannels": [],
+        }
+
     recorder_response = api.send_recorder(result)
 
     observations, unmapped = build_psop_recorder_observations(
@@ -1278,6 +1328,202 @@ def run_psop_once(
         "recorderResponse": recorder_response,
         "childResponse": child_response,
     }
+
+
+def _attempt_relogin(
+    client: SpecoNRLClient,
+    username: str | None,
+    password: str | None,
+) -> str:
+    """One controlled re-authentication attempt.
+
+    Never loops and never logs credentials. Called at most once per --watch
+    tick, only when the tick found the recorder unreachable, so a rebooted
+    NVR can be picked up again without an aggressive login loop.
+    """
+    if not username or not password:
+        return "RELOGIN_SKIPPED_NO_CREDENTIALS"
+    try:
+        client.login(username, password)
+    except SpecoLoginError:
+        return "RELOGIN_AUTH_FAILED"
+    except SpecoError:
+        return "RELOGIN_UNREACHABLE"
+    return "RELOGIN_OK"
+
+
+def _collect_and_enrich(
+    client: SpecoNRLClient,
+    *,
+    recorder_host: str,
+    local_env: dict[str, str],
+    timeout: float,
+) -> dict[str, Any]:
+    return enrich_discovered_children(
+        client.collect(),
+        recorder_host=recorder_host,
+        local_env=local_env,
+        timeout=timeout,
+    )
+
+
+def watch_tick(
+    client: SpecoNRLClient,
+    api: PsopRecorderApiClient,
+    mapping: dict[str, Any],
+    *,
+    recorder_host: str,
+    local_env: dict[str, str],
+    timeout: float,
+    credentials: tuple[str | None, str | None],
+    collect_fn: Callable[..., dict[str, Any]] = _collect_and_enrich,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run exactly one --watch iteration.
+
+    Order is strict: collect NOW -> enrich -> (at most one re-auth if the
+    recorder looks unreachable) -> deliver ONLY this tick's collection. A
+    previous tick's result is never reused as the current heartbeat.
+    """
+    username, password = credentials
+
+    result = collect_fn(
+        client,
+        recorder_host=recorder_host,
+        local_env=local_env,
+        timeout=timeout,
+    )
+
+    reauth_outcome: str | None = None
+    if result.get("recorderReachable") is False:
+        # No CORE source responded this tick. It could be a dead NVR or a
+        # stale session after a reboot. Try to re-authenticate exactly once;
+        # if that succeeds, re-collect once so a recovered recorder resumes
+        # its real heartbeat within the same tick. If it fails, we still send
+        # nothing and try again on the next tick.
+        reauth_outcome = _attempt_relogin(client, username, password)
+        if reauth_outcome == "RELOGIN_OK":
+            result = collect_fn(
+                client,
+                recorder_host=recorder_host,
+                local_env=local_env,
+                timeout=timeout,
+            )
+
+    delivery = run_psop_once(result, api, mapping)
+    if reauth_outcome is not None:
+        delivery["reauth"] = reauth_outcome
+    return result, delivery
+
+
+def _log_line(*parts: object) -> None:
+    """Print one --watch progress line, flushed immediately.
+
+    The watcher runs detached with stdout redirected to a log file, where the
+    default block buffering would hide tick output for many minutes. Flushing
+    per line keeps the log usable for live observability.
+    """
+    print(*parts, flush=True)
+
+
+def _startup_login(
+    client: SpecoNRLClient,
+    username: str,
+    password: str,
+    *,
+    watch: bool,
+) -> dict[str, Any] | None:
+    """Authenticate once before entering a run mode.
+
+    Returns None on success. On failure returns a small dict describing the
+    outcome ({"fatal": bool, "status": str, "code": int | None, ...}).
+
+    For --watch, a recorder that cannot be reached at all (SpecoError, e.g.
+    the NVR is already powered off at startup) is NOT fatal: the loop starts
+    anyway and watch_tick re-authenticates at most once per cycle, so the
+    recorder is picked up automatically when it comes back. A recorder that
+    actively rejects the credentials (SpecoLoginError) is always fatal.
+
+    Never logs or echoes the password.
+    """
+    try:
+        client.login(username, password)
+        return None
+    except SpecoLoginError as error:
+        return {
+            "fatal": True,
+            "status": "LOGIN_FAILED",
+            "login": error.to_dict(),
+            "code": 5,
+        }
+    except SpecoError as error:
+        if watch:
+            return {
+                "fatal": False,
+                "status": "RECORDER_UNREACHABLE_AT_STARTUP",
+                "error": str(error),
+                "code": None,
+            }
+        return {
+            "fatal": True,
+            "status": "ERROR",
+            "error": str(error),
+            "code": 6,
+        }
+
+
+def run_watch_loop(
+    client: SpecoNRLClient,
+    api: PsopRecorderApiClient,
+    mapping: dict[str, Any],
+    *,
+    recorder_host: str,
+    local_env: dict[str, str],
+    timeout: float,
+    credentials: tuple[str | None, str | None],
+    interval: float,
+    collect_fn: Callable[..., dict[str, Any]] = _collect_and_enrich,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    log_fn: Callable[..., None] = _log_line,
+    max_ticks: int | None = None,
+) -> int:
+    """Drive the --watch loop.
+
+    Each iteration is a self-contained watch_tick: collect NOW, re-auth at
+    most once if the recorder looks unreachable, deliver only this tick's
+    data. The loop never exits on a network error or an unreachable recorder;
+    only KeyboardInterrupt (or max_ticks, used by tests) stops it.
+    """
+    tick = 0
+    try:
+        while max_ticks is None or tick < max_ticks:
+            tick += 1
+            result, delivery = watch_tick(
+                client,
+                api,
+                mapping,
+                recorder_host=recorder_host,
+                local_env=local_env,
+                timeout=timeout,
+                credentials=credentials,
+                collect_fn=collect_fn,
+            )
+
+            reauth = delivery.get("reauth")
+            log_fn(
+                "Speco "
+                f"collection={result['status']} "
+                f"reachable={result.get('recorderReachable')} "
+                f"children={delivery['observationsSent']} "
+                f"delivery={delivery['childDelivery']}"
+                + (f" reauth={reauth}" if reauth else "")
+            )
+
+            if max_ticks is not None and tick >= max_ticks:
+                break
+            sleep_fn(interval)
+    except KeyboardInterrupt:
+        log_fn("\nSpeco watch encerrado.")
+    return 0
 
 
 def main() -> int:
@@ -1346,45 +1592,38 @@ def main() -> int:
         timeout=max(0.5, args.timeout),
     )
 
-    try:
-        client.login(username, password)
-    except SpecoLoginError as error:
-        print(
-            json.dumps(
-                {
-                    "test": "PSOP Speco N8NRL read-only adapter",
-                    "target": "NVR Speco",
-                    "host": args.host,
-                    "status": "LOGIN_FAILED",
-                    "login": error.to_dict(),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 5
-    except SpecoError as error:
-        print(
-            json.dumps(
-                {
-                    "test": "PSOP Speco N8NRL read-only adapter",
-                    "target": "NVR Speco",
-                    "host": args.host,
-                    "status": "ERROR",
-                    "error": str(error),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 6
-
-    result = enrich_discovered_children(
-        client.collect(),
-        recorder_host=args.host,
-        local_env=local_env,
-        timeout=max(0.5, args.timeout),
+    login_outcome = _startup_login(
+        client, username, password, watch=args.watch
     )
+    if login_outcome is not None and login_outcome["fatal"]:
+        payload = {
+            "test": "PSOP Speco N8NRL read-only adapter",
+            "target": "NVR Speco",
+            "host": args.host,
+            "status": login_outcome["status"],
+        }
+        if "login" in login_outcome:
+            payload["login"] = login_outcome["login"]
+        if "error" in login_outcome:
+            payload["error"] = login_outcome["error"]
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return login_outcome["code"]
+    if login_outcome is not None:
+        # --watch only: the recorder is unreachable right now. Enter the loop
+        # anyway; watch_tick re-authenticates at most once per cycle and real
+        # collection resumes automatically when the recorder returns.
+        _log_line(
+            "Speco login inicial falhou: recorder inacessivel. "
+            "--watch permanece ativo e vai reautenticar uma vez por ciclo."
+        )
+
+    if not args.watch:
+        result = enrich_discovered_children(
+            client.collect(),
+            recorder_host=args.host,
+            local_env=local_env,
+            timeout=max(0.5, args.timeout),
+        )
 
     if args.diagnose:
         print(
@@ -1441,36 +1680,20 @@ def main() -> int:
 
         if args.watch:
             interval = max(5.0, args.interval)
-            print(
+            _log_line(
                 f"Speco watch ativo a cada {interval:g}s "
                 "(Ctrl+C para parar)"
             )
-
-            try:
-                while True:
-                    delivery = run_psop_once(
-                        result,
-                        api,
-                        mapping,
-                    )
-
-                    print(
-                        "Speco "
-                        f"collection={result['status']} "
-                        f"children={delivery['observationsSent']} "
-                        f"delivery={delivery['childDelivery']}"
-                    )
-
-                    time.sleep(interval)
-                    result = enrich_discovered_children(
-                        client.collect(),
-                        recorder_host=args.host,
-                        local_env=local_env,
-                        timeout=max(0.5, args.timeout),
-                    )
-            except KeyboardInterrupt:
-                print("\nSpeco watch encerrado.")
-                return 0
+            return run_watch_loop(
+                client,
+                api,
+                mapping,
+                recorder_host=args.host,
+                local_env=local_env,
+                timeout=max(0.5, args.timeout),
+                credentials=(username, password),
+                interval=interval,
+            )
 
         delivery = run_psop_once(
             result,
@@ -1530,6 +1753,10 @@ def main() -> int:
             f"{delivery['observationsSent']}"
         )
     )
+
+    if not delivery["recorderDelivered"]:
+        # --once against an unreachable recorder: no heartbeat was sent.
+        return 7
 
     if delivery.get("unmappedChannels"):
         return 8
