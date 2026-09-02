@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 #
-# Unit tests for the Speco runtime-selection helpers in ../lib.sh.
+# Unit tests for the Speco runtime-selection AND config-selection helpers
+# in ../lib.sh (the two are deliberately independent — see
+# docs/LAB_RUNTIME.md — so they are tested independently here too).
 #
 # Pure bash + temporary git repos. Never starts the lab, never touches a
 # real PID, never spawns speco_n8nrl.py, never talks to the Keychain or the
 # network. Safe to run at any time, including while a real watcher (e.g.
 # the physical lab's PID 70582) is running elsewhere.
+#
+# Adapter-side behavior (how speco_n8nrl.py itself resolves
+# PSOP_SPECO_CONFIG_DIR) is covered separately, in Python, by
+# apps/gateway/tests/test_speco_config_dir.py (run via `pnpm test:gateway`)
+# — not duplicated here.
 #
 # Run: bash scripts/lab/test/test_runtime.sh
 
@@ -83,60 +90,54 @@ trap cleanup EXIT
 
 unset PSOP_SPECO_RUNTIME_DIR PSOP_SPECO_CONFIG_DIR 2>/dev/null
 
-echo "PSOP lab manager — Speco runtime selection tests"
+echo "PSOP lab manager — Speco runtime & config selection tests"
 echo "--------------------------------------------------"
 
-# --- 1. runtime not configured -> Speco would not start -----------------
+# ====================================================================
+# PART A — runtime directory (executable code) resolution/validation
+# ====================================================================
+
+# --- A1. runtime not configured -> Speco would not start ----------------
 rm -f "$RUNTIME_ENV_FILE"
 unset PSOP_SPECO_RUNTIME_DIR
 resolved="$(speco_runtime_dir_resolve)"
-assert_eq "1. unresolved runtime dir is empty" "" "$resolved"
+assert_eq "A1. unresolved runtime dir is empty" "" "$resolved"
 check="$(speco_runtime_check "$resolved")"
-assert_eq "1. unconfigured runtime -> NOT_CONFIGURED" "NOT_CONFIGURED" "$check"
+assert_eq "A1. unconfigured runtime -> NOT_CONFIGURED" "NOT_CONFIGURED" "$check"
 
-# --- 2. env var wins over runtime.env -----------------------------------
+# --- A2. env var wins over runtime.env -----------------------------------
 mkdir -p "$(dirname "$RUNTIME_ENV_FILE")"
 printf 'PSOP_SPECO_RUNTIME_DIR=%s/from-file\n' "$SANDBOX" > "$RUNTIME_ENV_FILE"
 export PSOP_SPECO_RUNTIME_DIR="$SANDBOX/from-env"
 resolved="$(speco_runtime_dir_resolve)"
-assert_eq "2. env var takes precedence over runtime.env" "$SANDBOX/from-env" "$resolved"
+assert_eq "A2. env var takes precedence over runtime.env" "$SANDBOX/from-env" "$resolved"
 unset PSOP_SPECO_RUNTIME_DIR
 
-# --- 3. runtime.env works when env var is unset --------------------------
+# --- A3. runtime.env works when env var is unset --------------------------
 resolved="$(speco_runtime_dir_resolve)"
-assert_eq "3. runtime.env resolves when env var unset" "$SANDBOX/from-file" "$resolved"
+assert_eq "A3. runtime.env resolves when env var unset" "$SANDBOX/from-file" "$resolved"
 rm -f "$RUNTIME_ENV_FILE"
 
-# --- 4. runtime dir does not exist -> NOT_FOUND ---------------------------
+# --- A4. runtime dir does not exist -> NOT_FOUND ---------------------------
 check="$(speco_runtime_check "$SANDBOX/does-not-exist")"
-assert_eq "4. missing directory -> NOT_FOUND" "NOT_FOUND" "$check"
+assert_eq "A4. missing directory -> NOT_FOUND" "NOT_FOUND" "$check"
 
-# --- 5. speco_n8nrl.py missing -> MISSING_FILE ----------------------------
+# --- A5. speco_n8nrl.py missing -> MISSING_FILE ----------------------------
 mkdir -p "$SANDBOX/no-script"
 check="$(speco_runtime_check "$SANDBOX/no-script")"
-assert_eq "5. missing speco_n8nrl.py -> MISSING_FILE" "MISSING_FILE" "$check"
+assert_eq "A5. missing speco_n8nrl.py -> MISSING_FILE" "MISSING_FILE" "$check"
 
-# --- 5b. (bonus) missing .env.speco.local -> MISSING_CONFIG ---------------
-mkdir -p "$SANDBOX/no-config"
-touch "$SANDBOX/no-config/speco_n8nrl.py"
-check="$(speco_runtime_check "$SANDBOX/no-config")"
-assert_eq "5b. missing .env.speco.local -> MISSING_CONFIG" "MISSING_CONFIG" "$check"
-
-# --- 6. runtime without git -> NOT_GIT ------------------------------------
-mkdir -p "$SANDBOX/no-git"
-touch "$SANDBOX/no-git/speco_n8nrl.py" "$SANDBOX/no-git/.env.speco.local"
-check="$(speco_runtime_check "$SANDBOX/no-git")"
-assert_eq "6. not a git worktree -> NOT_GIT" "NOT_GIT" "$check"
-
-# --- 7 & 8. ancestry: STALE when min commit is not an ancestor, --------
-#            OK when it is (via an overridable min-commit, so this does
-#            NOT depend on the real repo's history at all)
+# --- A6. a runtime with speco_n8nrl.py but NO config passes runtime_check -
+# (this is the fix for the bug found in review: runtime and config are now
+# independent — a code-only runtime directory is a perfectly valid runtime,
+# it is just not spawnable on its own without a valid config dir too, which
+# start.sh checks separately)
 REPO="$SANDBOX/repo"
 mkdir -p "$REPO"
 git -C "$REPO" init -q
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name "Lab Test"
-touch "$REPO/speco_n8nrl.py" "$REPO/.env.speco.local"
+touch "$REPO/speco_n8nrl.py"
 git -C "$REPO" add -A
 git -C "$REPO" commit -q -m base
 commit_base="$(git -C "$REPO" rev-parse HEAD)"
@@ -152,46 +153,114 @@ git -C "$REPO" commit -q -m "later"
 commit_head="$(git -C "$REPO" rev-parse HEAD)"
 
 check="$(speco_runtime_check "$REPO" "$commit_fix")"
-assert_eq "8. HEAD descending from min commit -> OK" "OK" "$check"
+assert_eq "A6. code-only runtime (no .env/.json inside it) still passes -> OK" "OK" "$check"
 
+# --- A7. HEAD predating the min commit -> STALE ---------------------------
 git -C "$REPO" checkout -q "$commit_base"
 check="$(speco_runtime_check "$REPO" "$commit_fix")"
-assert_eq "7. HEAD predating min commit -> STALE" "STALE" "$check"
+assert_eq "A7. HEAD predating min commit -> STALE" "STALE" "$check"
 git -C "$REPO" checkout -q "$commit_head"
 
-# --- 9. dirty runtime -> DIRTY --------------------------------------------
+# --- A8. HEAD descending from the min commit -> OK ------------------------
+check="$(speco_runtime_check "$REPO" "$commit_fix")"
+assert_eq "A8. HEAD descending from min commit -> OK" "OK" "$check"
+
+# --- A9. dirty runtime -> DIRTY --------------------------------------------
 echo "local edit" >> "$REPO/speco_n8nrl.py"
 check="$(speco_runtime_check "$REPO" "$commit_fix")"
-assert_eq "9. uncommitted local change -> DIRTY" "DIRTY" "$check"
+assert_eq "A9. uncommitted local change -> DIRTY" "DIRTY" "$check"
 git -C "$REPO" checkout -q -- speco_n8nrl.py
 
-# --- 10. status display building blocks (head + OK message) --------------
-# lab:status shows runtime/cwd/git-HEAD/min-fix without starting a real
-# process; the underlying data it reads is exercised directly here rather
-# than by parsing terminal output (which would require a live PID).
+# --- A10. status display building blocks (head + OK message) --------------
 head="$(speco_runtime_head "$REPO")"
-assert_eq "10. speco_runtime_head reads the real HEAD" "$commit_head" "$head"
+assert_eq "A10. speco_runtime_head reads the real HEAD" "$commit_head" "$head"
 msg="$(speco_runtime_check_message OK "$REPO" "$commit_fix")"
-assert_eq "10. OK message is stable/expected" "runtime OK" "$msg"
-assert_true "10. status.sh renders runtime/git HEAD/min fix labels" \
+assert_eq "A10. OK message is stable/expected" "runtime OK" "$msg"
+assert_true "A10. status.sh renders runtime/git HEAD/min fix labels" \
   grep -q "git HEAD" "$LAB_SCRIPTS_DIR/status.sh"
-assert_true "10. status.sh renders a min-fix label" \
+assert_true "A10. status.sh renders a min-fix label" \
   grep -q "min fix" "$LAB_SCRIPTS_DIR/status.sh"
 
-# --- 11. PID/cwd mismatch -> warning ---------------------------------------
-assert_true  "11. matching cwd is recognized" \
+# --- A11. PID/cwd mismatch -> warning ---------------------------------------
+assert_true  "A11. matching cwd is recognized" \
   speco_cwd_matches "/a/b/gateway" "/a/b/gateway"
-assert_true  "11. trailing slash is normalized" \
+assert_true  "A11. trailing slash is normalized" \
   speco_cwd_matches "/a/b/gateway/" "/a/b/gateway"
-assert_false "11. differing cwd is NOT recognized as a match" \
+assert_false "A11. differing cwd is NOT recognized as a match" \
   speco_cwd_matches "/a/b/gateway" "/a/other/gateway"
-assert_true "11. status.sh renders a mismatch WARNING when cwd differs" \
+assert_true "A11. status.sh renders a mismatch WARNING when cwd differs" \
   grep -q "differs from the runtime recorded at start" "$LAB_SCRIPTS_DIR/status.sh"
 
-# --- 12. config/secrets never appear directly in output --------------------
-# Static check: every line mentioning PSOP_SPECO_PASSWORD in the shipped
-# scripts must be an export/unset (or a comment), never fed to an output
-# function (printf/echo/log/warn/err/detail/row) on the same line.
+# --- A13. stop keeps working without any runtime dir -----------------------
+assert_false "A13. stop.sh has no coupling to runtime selection" \
+  grep -q "RUNTIME" "$LAB_SCRIPTS_DIR/stop.sh"
+(
+  unset PSOP_SPECO_RUNTIME_DIR
+  pid_is_ours $$ speco >/dev/null 2>&1
+  true
+)
+assert_eq "A13. stop-path helpers tolerate an unset runtime var" "0" "$?"
+
+# --- A14. no fallback to \$REPO_ROOT/apps/gateway ---------------------------
+rm -f "$RUNTIME_ENV_FILE"
+unset PSOP_SPECO_RUNTIME_DIR
+resolved="$(speco_runtime_dir_resolve)"
+assert_eq "A14. no configuration resolves to empty, never REPO_ROOT/apps/gateway" "" "$resolved"
+if [ "$resolved" = "$REPO_ROOT/apps/gateway" ]; then
+  printf 'FAIL - A14. resolved dir must never silently equal REPO_ROOT/apps/gateway\n'
+  FAIL=$((FAIL + 1))
+else
+  printf 'ok   - %s\n' "A14. resolved dir is not REPO_ROOT/apps/gateway"
+  PASS=$((PASS + 1))
+fi
+
+# ====================================================================
+# PART B — config directory (.env.speco.local + speco.local.json)
+# resolution/validation, independent of the runtime directory
+# ====================================================================
+
+# --- B2/B3/B4/B5. speco_config_check outcomes -------------------------------
+CONFIG_OK_DIR="$SANDBOX/config-ok"
+mkdir -p "$CONFIG_OK_DIR"
+touch "$CONFIG_OK_DIR/.env.speco.local" "$CONFIG_OK_DIR/speco.local.json"
+check="$(speco_config_check "$CONFIG_OK_DIR")"
+assert_eq "B2. config dir with .env AND map -> CONFIG_OK" "CONFIG_OK" "$check"
+
+CONFIG_NO_ENV_DIR="$SANDBOX/config-no-env"
+mkdir -p "$CONFIG_NO_ENV_DIR"
+touch "$CONFIG_NO_ENV_DIR/speco.local.json"
+check="$(speco_config_check "$CONFIG_NO_ENV_DIR")"
+assert_eq "B3. config dir without .env.speco.local -> MISSING_ENV" "MISSING_ENV" "$check"
+
+CONFIG_NO_MAP_DIR="$SANDBOX/config-no-map"
+mkdir -p "$CONFIG_NO_MAP_DIR"
+touch "$CONFIG_NO_MAP_DIR/.env.speco.local"
+check="$(speco_config_check "$CONFIG_NO_MAP_DIR")"
+assert_eq "B4. config dir without speco.local.json -> MISSING_MAP" "MISSING_MAP" "$check"
+
+check="$(speco_config_check "$SANDBOX/config-does-not-exist")"
+assert_eq "B5. config dir does not exist -> CONFIG_NOT_FOUND" "CONFIG_NOT_FOUND" "$check"
+
+# --- B6. PSOP_SPECO_CONFIG_DIR env var wins over runtime.env ----------------
+printf 'PSOP_SPECO_CONFIG_DIR=%s/config-from-file\n' "$SANDBOX" > "$RUNTIME_ENV_FILE"
+export PSOP_SPECO_CONFIG_DIR="$SANDBOX/config-from-env"
+resolved="$(speco_config_dir_resolve)"
+assert_eq "B6. config env var takes precedence over runtime.env" "$SANDBOX/config-from-env" "$resolved"
+unset PSOP_SPECO_CONFIG_DIR
+
+# --- B7. runtime.env PSOP_SPECO_CONFIG_DIR works when env var is unset ------
+resolved="$(speco_config_dir_resolve)"
+assert_eq "B7. config runtime.env resolves when env var unset" "$SANDBOX/config-from-file" "$resolved"
+rm -f "$RUNTIME_ENV_FILE"
+
+# --- B7b. (bonus) config dir has a safe default, unlike runtime dir --------
+resolved="$(speco_config_dir_resolve)"
+assert_eq "B7b. config dir defaults to REPO_ROOT/apps/gateway (not fail-closed)" \
+  "$REPO_ROOT/apps/gateway" "$resolved"
+
+# --- B11. no secret reaches an output function ------------------------------
+# (PSOP_SPECO_CONFIG_DIR is not a secret and is expected to appear in `log`
+# lines; only PSOP_SPECO_PASSWORD must never reach an output function.)
 secret_leak=0
 for f in "$LAB_SCRIPTS_DIR/lib.sh" "$LAB_SCRIPTS_DIR/start.sh" "$LAB_SCRIPTS_DIR/status.sh"; do
   while IFS= read -r line; do
@@ -202,42 +271,48 @@ for f in "$LAB_SCRIPTS_DIR/lib.sh" "$LAB_SCRIPTS_DIR/start.sh" "$LAB_SCRIPTS_DIR
     case "$line" in
       *printf*|*echo*|*log\ *|*warn\ *|*err\ *|*detail\ *|*row\ *)
         secret_leak=1
-        printf 'FAIL - 12. possible secret output in %s: %s\n' "$f" "$line"
+        printf 'FAIL - B11. possible secret output in %s: %s\n' "$f" "$line"
         ;;
     esac
   done < <(grep -n "PSOP_SPECO_PASSWORD" "$f" | cut -d: -f2-)
 done
 if [ "$secret_leak" -eq 0 ]; then
-  printf 'ok   - %s\n' "12. no PSOP_SPECO_PASSWORD reaches an output function in lib.sh/start.sh/status.sh"
+  printf 'ok   - %s\n' "B11. no PSOP_SPECO_PASSWORD reaches an output function in lib.sh/start.sh/status.sh"
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
 fi
+assert_false "B11. .env.speco.local contents are never read/echoed by config_check" \
+  grep -qE "cat .*\.env\.speco\.local|echo .*\\\$\(.*\.env\.speco\.local" "$LAB_SCRIPTS_DIR/lib.sh"
 
-# --- 13. stop keeps working without any runtime dir -----------------------
-assert_false "13. stop.sh has no coupling to runtime selection" \
-  grep -q "RUNTIME" "$LAB_SCRIPTS_DIR/stop.sh"
-(
-  unset PSOP_SPECO_RUNTIME_DIR
-  # pid_is_ours must not error just because no runtime dir is configured —
-  # stop.sh's guard logic never references it at all.
-  pid_is_ours $$ speco >/dev/null 2>&1
-  true
-)
-assert_eq "13. stop-path helpers tolerate an unset runtime var" "0" "$?"
+# --- B12. spawn uses the runtime dir as cwd, passed as a positional arg,
+#          not interpolated into the bash -c string --------------------------
+assert_true "B12. spawn cd's into the runtime dir via a positional argument (\$1), not string interpolation" \
+  grep -q 'cd "\$1"' "$LAB_SCRIPTS_DIR/start.sh"
+assert_false "B12. the old unsafe interpolated form is gone" \
+  grep -q "cd '\$SPECO_RUNTIME_DIR'" "$LAB_SCRIPTS_DIR/start.sh"
+assert_true "B12. PSOP_SPECO_CONFIG_DIR is exported to the spawned child" \
+  grep -q 'export PSOP_SPECO_CONFIG_DIR=' "$LAB_SCRIPTS_DIR/start.sh"
+assert_true "B12. PSOP_SPECO_CONFIG_DIR is unset in the parent shell after spawn" \
+  grep -q 'unset PSOP_SPECO_PASSWORD PSOP_SPECO_CONFIG_DIR' "$LAB_SCRIPTS_DIR/start.sh"
 
-# --- 14. no fallback to \$REPO_ROOT/apps/gateway ---------------------------
-rm -f "$RUNTIME_ENV_FILE"
-unset PSOP_SPECO_RUNTIME_DIR
-resolved="$(speco_runtime_dir_resolve)"
-assert_eq "14. no configuration resolves to empty, never REPO_ROOT/apps/gateway" "" "$resolved"
-if [ "$resolved" = "$REPO_ROOT/apps/gateway" ]; then
-  printf 'FAIL - 14. resolved dir must never silently equal REPO_ROOT/apps/gateway\n'
-  FAIL=$((FAIL + 1))
-else
-  printf 'ok   - %s\n' "14. resolved dir is not REPO_ROOT/apps/gateway"
-  PASS=$((PASS + 1))
-fi
+# --- B13. status.sh distinguishes runtime from config -----------------------
+assert_true "B13. status.sh has a distinct \"config\" label" \
+  grep -q '"config ' "$LAB_SCRIPTS_DIR/status.sh"
+assert_true "B13. status.sh calls speco_config_check independently of speco_runtime_check" \
+  grep -q "speco_config_check" "$LAB_SCRIPTS_DIR/status.sh"
+
+# --- B14/B15. already covered by A9 (DIRTY) and A7 (STALE) — the runtime
+# guards are unchanged by this config-separation fix, only what they check
+# (code only, not config) changed. Re-asserted here for direct traceability
+# against the "testes obrigatórios" list.
+assert_eq "B14. runtime dirty is still blocked (same as A9)" "DIRTY" \
+  "$(echo "local edit" >> "$REPO/speco_n8nrl.py"; speco_runtime_check "$REPO" "$commit_fix")"
+git -C "$REPO" checkout -q -- speco_n8nrl.py
+git -C "$REPO" checkout -q "$commit_base"
+assert_eq "B15. runtime stale is still blocked (same as A7)" "STALE" \
+  "$(speco_runtime_check "$REPO" "$commit_fix")"
+git -C "$REPO" checkout -q "$commit_head"
 
 echo "--------------------------------------------------"
 echo "PASS=$PASS FAIL=$FAIL"

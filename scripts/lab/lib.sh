@@ -291,12 +291,14 @@ speco_runtime_head() {
 
 # speco_runtime_check DIR [MIN_COMMIT] - the single source of truth used by
 # both lab:start (enforced, fail-closed) and lab:status (displayed,
-# non-fatal). Prints exactly one status token to stdout; returns 0 only
-# for OK. speco_n8nrl.py resolves its own config relative to its own file
-# location (not cwd), so a runtime dir also needs a reachable
-# .env.speco.local next to it (typically a symlink to the config dir) —
-# that is checked here too, not left to fail later inside the Python
-# process.
+# non-fatal) for the RUNTIME (executable code) directory only. Prints
+# exactly one status token to stdout; returns 0 only for OK. Deliberately
+# does NOT look at .env.speco.local/speco.local.json — that is a separate
+# concern, checked independently by speco_config_check() below, so a
+# runtime directory never needs to physically contain (or symlink) local
+# config just to pass validation. speco_n8nrl.py itself still needs a
+# reachable config via PSOP_SPECO_CONFIG_DIR at spawn time (see start.sh) —
+# that is what makes the two independent instead of implicitly coupled.
 speco_runtime_check() {
   local dir="$1" min="${2:-$SPECO_MIN_FIX_COMMIT}"
 
@@ -308,9 +310,6 @@ speco_runtime_check() {
   fi
   if [ ! -f "$dir/speco_n8nrl.py" ]; then
     printf 'MISSING_FILE'; return 1
-  fi
-  if [ ! -e "$dir/.env.speco.local" ]; then
-    printf 'MISSING_CONFIG'; return 1
   fi
   if ! git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf 'NOT_GIT'; return 1
@@ -334,12 +333,47 @@ speco_runtime_check_message() {
         "$(_lab_runtime_env_file)" ;;
     NOT_FOUND)      printf 'runtime directory does not exist: %s' "$dir" ;;
     MISSING_FILE)   printf 'speco_n8nrl.py not found in: %s' "$dir" ;;
-    MISSING_CONFIG) printf '.env.speco.local not found in: %s (symlink it from the config directory)' "$dir" ;;
     NOT_GIT)        printf 'runtime directory is not inside a git worktree: %s' "$dir" ;;
     STALE)          printf 'runtime HEAD does not have %s (minimum required fix) as an ancestor' "$min" ;;
     DIRTY)          printf 'runtime has local uncommitted changes (git status is not clean): %s' "$dir" ;;
     OK)             printf 'runtime OK' ;;
     *)              printf 'unknown runtime status: %s' "$token" ;;
+  esac
+}
+
+# speco_config_check DIR - validates the CONFIG directory independently of
+# the runtime directory: it must exist and contain both
+# .env.speco.local AND speco.local.json (the mapping file is just as
+# required as the env file — a config dir with only one of the two would
+# otherwise pass validation here and only fail later, deep inside the
+# Python process, after the watcher already thinks it started). Never
+# reads or prints file contents. Prints exactly one status token; returns
+# 0 only for CONFIG_OK.
+speco_config_check() {
+  local dir="$1"
+
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    printf 'CONFIG_NOT_FOUND'; return 1
+  fi
+  if [ ! -e "$dir/.env.speco.local" ]; then
+    printf 'MISSING_ENV'; return 1
+  fi
+  if [ ! -e "$dir/speco.local.json" ]; then
+    printf 'MISSING_MAP'; return 1
+  fi
+  printf 'CONFIG_OK'; return 0
+}
+
+# speco_config_check_message TOKEN DIR - human-readable detail for a status
+# token returned by speco_config_check. Paths only, never file contents.
+speco_config_check_message() {
+  local token="$1" dir="$2"
+  case "$token" in
+    CONFIG_NOT_FOUND) printf 'config directory does not exist: %s' "$dir" ;;
+    MISSING_ENV)      printf '.env.speco.local not found in: %s' "$dir" ;;
+    MISSING_MAP)      printf 'speco.local.json not found in: %s' "$dir" ;;
+    CONFIG_OK)        printf 'config OK' ;;
+    *)                printf 'unknown config status: %s' "$token" ;;
   esac
 }
 
@@ -367,12 +401,14 @@ pid_cwd() {
 speco_runtime_metadata_file() { printf '%s/speco.runtime' "$LAB_DIR"; }
 
 speco_runtime_metadata_write() {
-  local dir="$1" head="$2" check="$3" f
+  local dir="$1" head="$2" check="$3" config_dir="$4" config_check="$5" f
   f="$(speco_runtime_metadata_file)"
   {
     printf 'PSOP_SPECO_RUNTIME_DIR=%s\n' "$dir"
     printf 'GIT_HEAD=%s\n' "$head"
     printf 'MIN_COMMIT_CHECK=%s\n' "$check"
+    printf 'PSOP_SPECO_CONFIG_DIR=%s\n' "$config_dir"
+    printf 'CONFIG_CHECK=%s\n' "$config_check"
     printf 'STARTED_AT=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
   } > "$f"
 }
@@ -380,7 +416,7 @@ speco_runtime_metadata_write() {
 speco_runtime_metadata_get() {
   local key="$1" f line
   case "$key" in
-    PSOP_SPECO_RUNTIME_DIR|GIT_HEAD|MIN_COMMIT_CHECK|STARTED_AT) ;;
+    PSOP_SPECO_RUNTIME_DIR|GIT_HEAD|MIN_COMMIT_CHECK|PSOP_SPECO_CONFIG_DIR|CONFIG_CHECK|STARTED_AT) ;;
     *) return 1 ;;
   esac
   f="$(speco_runtime_metadata_file)"

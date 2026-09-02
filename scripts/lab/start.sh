@@ -166,28 +166,44 @@ else
     warn "    See docs/LAB_RUNTIME.md. Skipping Speco watcher."
   else
     SPECO_CONFIG_DIR="$(speco_config_dir_resolve)"
-    SPECO_PW="$(speco_password_from_keychain "$SPECO_CONFIG_DIR" || true)"
-    if [ -z "$SPECO_PW" ]; then
-      speco_keychain_hint "$SPECO_CONFIG_DIR"
-      warn "    Skipping Speco watcher until the Keychain entry exists."
+    SPECO_CONFIG_CHECK="$(speco_config_check "$SPECO_CONFIG_DIR")"
+
+    if [ "$SPECO_CONFIG_CHECK" != "CONFIG_OK" ]; then
+      warn "    Speco config is not ready — refusing to start (fail-closed)."
+      warn "    $(speco_config_check_message "$SPECO_CONFIG_CHECK" "$SPECO_CONFIG_DIR")"
+      warn "    See docs/LAB_RUNTIME.md. Skipping Speco watcher."
     else
-      log "    runtime: ${SPECO_RUNTIME_DIR} (source: $(speco_runtime_dir_source))"
-      log "    starting: python3 speco_n8nrl.py --watch --interval 30"
-      # Exported into the environment only (never on a command line, so it does
-      # not appear in `ps`); the already-forked child keeps its copy after unset.
-      export PSOP_SPECO_PASSWORD="$SPECO_PW"
-      pid="$(spawn speco \
-        bash -c "cd '$SPECO_RUNTIME_DIR' && exec python3 speco_n8nrl.py --watch --interval 30")"
-      unset PSOP_SPECO_PASSWORD SPECO_PW
-      nap 2
-      if service_running speco; then
-        speco_runtime_metadata_write "$SPECO_RUNTIME_DIR" \
-          "$(speco_runtime_head "$SPECO_RUNTIME_DIR")" "$SPECO_RUNTIME_CHECK"
-        log "    speco pid ${pid} — log: $(logfile speco)"
-        ok "    Speco watcher started"
+      SPECO_PW="$(speco_password_from_keychain "$SPECO_CONFIG_DIR" || true)"
+      if [ -z "$SPECO_PW" ]; then
+        speco_keychain_hint "$SPECO_CONFIG_DIR"
+        warn "    Skipping Speco watcher until the Keychain entry exists."
       else
-        err "    Speco watcher exited immediately. Last log lines:"
-        tail -n 20 "$(logfile speco)" >&2 || true
+        log "    runtime: ${SPECO_RUNTIME_DIR} (source: $(speco_runtime_dir_source))"
+        log "    config:  ${SPECO_CONFIG_DIR}"
+        log "    starting: python3 speco_n8nrl.py --watch --interval 30"
+        # Both exported into the environment only — never on a command line
+        # (so neither appears in `ps`); the already-forked child keeps its
+        # own copy after these are unset here. PSOP_SPECO_CONFIG_DIR is not
+        # a secret, but it travels the same way for interface consistency.
+        # Positional args (not string interpolation) protect the runtime
+        # path from breaking on spaces/quotes.
+        export PSOP_SPECO_PASSWORD="$SPECO_PW"
+        export PSOP_SPECO_CONFIG_DIR="$SPECO_CONFIG_DIR"
+        pid="$(spawn speco \
+          bash -c 'cd "$1" && exec python3 speco_n8nrl.py --watch --interval 30' \
+          _ "$SPECO_RUNTIME_DIR")"
+        unset PSOP_SPECO_PASSWORD PSOP_SPECO_CONFIG_DIR SPECO_PW
+        nap 2
+        if service_running speco; then
+          speco_runtime_metadata_write "$SPECO_RUNTIME_DIR" \
+            "$(speco_runtime_head "$SPECO_RUNTIME_DIR")" "$SPECO_RUNTIME_CHECK" \
+            "$SPECO_CONFIG_DIR" "$SPECO_CONFIG_CHECK"
+          log "    speco pid ${pid} — log: $(logfile speco)"
+          ok "    Speco watcher started"
+        else
+          err "    Speco watcher exited immediately. Last log lines:"
+          tail -n 20 "$(logfile speco)" >&2 || true
+        fi
       fi
     fi
   fi

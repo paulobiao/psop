@@ -79,6 +79,21 @@ if service_running speco; then
       detail "${c_red}INVALID RUNTIME: $(speco_runtime_check_message "$check" "$effective_dir")${c_reset}"
     fi
   fi
+
+  # Config is a separate concern from runtime code (docs/LAB_RUNTIME.md):
+  # shown as its own block, path only — .env.speco.local/speco.local.json
+  # contents are never read or printed here.
+  meta_config_dir="$(speco_runtime_metadata_get PSOP_SPECO_CONFIG_DIR || true)"
+  effective_config_dir="${meta_config_dir:-$(speco_config_dir_resolve)}"
+  if [ -n "$effective_config_dir" ]; then
+    config_check="$(speco_config_check "$effective_config_dir")"
+    detail "config   ${effective_config_dir}"
+    if [ "$config_check" = "CONFIG_OK" ]; then
+      detail "config   OK"
+    else
+      detail "${c_red}INVALID CONFIG: $(speco_config_check_message "$config_check" "$effective_config_dir")${c_reset}"
+    fi
+  fi
 elif ext="$(pgrep -f -U "$(id -u)" 'speco_n8nrl.py' 2>/dev/null)" && [ -n "$ext" ]; then
   row "Speco" "$(st_running)"; detail "pid(s) ${ext//$'\n'/ } (not managed by this lab)"
 elif pid="$(read_pid speco)" && [ -f "$(pidfile speco)" ]; then

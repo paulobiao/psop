@@ -8,7 +8,8 @@ Hikvision child cameras).
 
 This document explains why the Speco watcher — and only the Speco
 watcher — has an explicit, fail-closed runtime selection instead of just
-running whatever code happens to be on disk.
+running whatever code happens to be on disk, and why its **code** and its
+**local config** are resolved from two entirely independent directories.
 
 ## Development workspace vs. runtime worktree
 
@@ -66,28 +67,53 @@ The runtime-selection design in this document exists so that this
 specific failure mode — a stale, silently-selected runtime running
 against real hardware — cannot recur unnoticed.
 
+## Two independent directories
+
+An earlier version of this design required a symlink trick (config files
+symlinked into the runtime directory, because `speco_n8nrl.py` used to
+resolve its own config relative to its own file location). That coupled
+"what code runs" and "where the config lives" in a way that could pass
+validation with a symlink present and a real file missing behind it, and
+made a code-only runtime directory impossible.
+
+`speco_n8nrl.py` now accepts an explicit `PSOP_SPECO_CONFIG_DIR`
+environment variable. With it unset, behavior is unchanged (config is
+read from next to the script, for standalone/manual use). With it set,
+config is read from that directory instead — independent of where the
+script itself lives:
+
+```
+Development/Lab Config:
+  <config-dir>/apps/gateway/
+    .env.speco.local
+    speco.local.json
+
+Stable Runtime:
+  <runtime-dir>/apps/gateway/
+    speco_n8nrl.py
+```
+
+```
+PSOP_SPECO_RUNTIME_DIR=<runtime-dir>/apps/gateway
+PSOP_SPECO_CONFIG_DIR=<config-dir>/apps/gateway
+```
+
+No symlink is required or expected. A runtime directory is validated as
+code — it does not need to contain (or link to) any config file at all
+to pass its own checks.
+
 ## Setup
 
 1. Pick (or create) a directory containing a working checkout of
-   `apps/gateway/` — this can be the development workspace itself while
-   you're actively testing a gateway change, or (recommended for the
-   physical lab's steady state) a dedicated, clean worktree tracking
-   `main` — see "Dedicated runtime worktree" below.
-2. Make sure `.env.speco.local` is reachable *next to* `speco_n8nrl.py` in
-   that directory — `speco_n8nrl.py` resolves its own config relative to
-   its own file location (`Path(__file__).resolve().parent`), not the
-   process's cwd, so this file has to physically be there (a symlink to
-   the real config file is the normal way to do this without duplicating
-   secrets):
-
-   ```sh
-   ln -s /path/to/config-source/apps/gateway/.env.speco.local \
-         /path/to/runtime/apps/gateway/.env.speco.local
-   ln -s /path/to/config-source/apps/gateway/speco.local.json \
-         /path/to/runtime/apps/gateway/speco.local.json
-   ```
-
-3. Point the lab manager at it — see "Precedence" below.
+   `apps/gateway/` for the runtime — this can be the development
+   workspace itself while you're actively testing a gateway change, or
+   (recommended for the physical lab's steady state) a dedicated, clean
+   worktree tracking `main` — see "Dedicated runtime worktree" below.
+2. Point `PSOP_SPECO_CONFIG_DIR` at wherever `.env.speco.local` and
+   `speco.local.json` actually live (typically your development
+   workspace's `apps/gateway/`, unchanged from before this design
+   existed) — see "Precedence" below.
+3. Point `PSOP_SPECO_RUNTIME_DIR` at the runtime directory from step 1.
 4. Run `pnpm lab:start`.
 
 ## `runtime.env`
@@ -101,8 +127,8 @@ exact keys, so a typo or an unexpected line is simply ignored rather than
 executed as shell.
 
 ```
-PSOP_SPECO_RUNTIME_DIR=/path/to/runtime/apps/gateway
-PSOP_SPECO_CONFIG_DIR=/path/to/config-source/apps/gateway
+PSOP_SPECO_RUNTIME_DIR=<runtime-dir>/apps/gateway
+PSOP_SPECO_CONFIG_DIR=<config-dir>/apps/gateway
 ```
 
 `PSOP_SPECO_CONFIG_DIR` is optional — see "Runtime vs. config" below.
@@ -124,14 +150,25 @@ the config directory:
 3. **Fallback** — see below. The runtime directory and the config
    directory are treated differently here.
 
-## Fail-closed (runtime directory only)
+## Fail-closed
 
-If neither (1) nor (2) resolves a runtime directory, `lab:start` **does
-not** fall back to `$REPO_ROOT/apps/gateway`. It refuses to start the
-Speco watcher, prints exactly why, and continues bringing up the other
-services (a missing/invalid Speco runtime is reported, not fatal to the
-rest of the lab — consistent with how a missing Keychain password is
-already handled today).
+`lab:start` only starts Speco when **both** independent checks pass, plus
+a Keychain password:
+
+```
+speco_runtime_check(RUNTIME_DIR) == OK
+AND
+speco_config_check(CONFIG_DIR)   == CONFIG_OK
+AND
+a password is available in the Keychain
+```
+
+If neither (1) nor (2) above resolves a runtime directory, `lab:start`
+**does not** fall back to `$REPO_ROOT/apps/gateway`. It refuses to start
+the Speco watcher, prints exactly why, and continues bringing up the
+other services (a missing/invalid Speco runtime or config is reported,
+not fatal to the rest of the lab — consistent with how a missing
+Keychain password is already handled today).
 
 ```
 ==> Speco NVR watcher
@@ -144,29 +181,34 @@ already handled today).
     See docs/LAB_RUNTIME.md. Skipping Speco watcher.
 ```
 
+If the runtime check passes but the config check fails (e.g. the mapping
+file is missing), the same fail-closed refusal happens for that reason
+instead — never a partial start that lets the Python process fail later,
+mid-collection, after `lab:start` already reported success.
+
 This is deliberate: this lab has already had a stale-runtime incident
 against real hardware. A one-time configuration step is a small price for
-never again silently running unknown code against a physical NVR.
+never again silently running unknown code — or code with an incomplete
+configuration — against a physical NVR.
 
-The **config** directory (`PSOP_SPECO_CONFIG_DIR`) does **not** fail
-closed — it defaults to `$REPO_ROOT/apps/gateway` (the development
-workspace's existing local config) if unset. Config is local, git-ignored
-*data* (a username, a device key, a mapping file), not executable code;
-defaulting it does not reintroduce the risk that runtime-directory
-selection guards against, and requiring it to be configured for every
-workspace would just be friction with no safety benefit.
+The **config** directory (`PSOP_SPECO_CONFIG_DIR`) has a safe default —
+`speco_config_dir_resolve()` falls back to `$REPO_ROOT/apps/gateway` (the
+development workspace's existing local config) if unset — but the
+**content** of that directory is still validated by `speco_config_check`
+and is just as fail-closed as the runtime check: a config directory
+missing either file refuses to start Speco. The distinction is only about
+*locating* the directory (config gets a sensible default; runtime code
+never does), not about validating what is found there.
 
-## Minimum-commit guard
+## Runtime (code) guard
 
-Before starting Speco, `lab:start` checks that the resolved runtime
+Before starting Speco, `lab:start` checks that the resolved **runtime**
 directory:
 
 1. exists;
 2. contains `speco_n8nrl.py`;
-3. has a reachable `.env.speco.local` next to it (real file or symlink —
-   see Setup);
-4. is inside a valid git worktree;
-5. has the minimum required fix commit as an **ancestor** of its `HEAD`:
+3. is inside a valid git worktree;
+4. has the minimum required fix commit as an **ancestor** of its `HEAD`:
 
    ```sh
    git -C "$SPECO_RUNTIME_DIR" merge-base --is-ancestor \
@@ -174,11 +216,14 @@ directory:
      HEAD
    ```
 
-6. is **not dirty** (`git status --porcelain` is empty — see below).
+5. is **not dirty** (`git status --porcelain` is empty — see below).
 
-Any failure is fail-closed: Speco does not start, and the specific reason
-is printed (`NOT_FOUND`, `MISSING_FILE`, `MISSING_CONFIG`, `NOT_GIT`,
-`STALE`, `DIRTY`), never a silent fallback.
+This check is about **code only** — it does not look at
+`.env.speco.local` or `speco.local.json` at all, and a runtime directory
+does not need to contain (or link to) either file to pass it. Any
+failure is fail-closed: Speco does not start, and the specific reason is
+printed (`NOT_FOUND`, `MISSING_FILE`, `NOT_GIT`, `STALE`, `DIRTY`), never
+a silent fallback.
 
 **Why ancestry, not an exact commit or a version string or a function
 grep:** `main` keeps advancing past the fix commit, and every one of
@@ -197,42 +242,69 @@ edit to `SPECO_MIN_FIX_COMMIT` in `scripts/lab/lib.sh`).
 
 If `git -C "$SPECO_RUNTIME_DIR" status --porcelain` is non-empty, Speco
 refuses to start. A runtime directory is meant to run reviewed, merged
-code — never a local edit someone forgot they had open. Config symlinks
-(`.env.speco.local`, `speco.local.json`) are already listed in
-`.gitignore`, so a properly set-up runtime directory shows clean even
-with them present; if `status.sh`/`start.sh` reports `DIRTY` unexpectedly,
-check for real, non-ignored local changes first.
+code — never a local edit someone forgot they had open. Since config no
+longer needs to live inside (or be symlinked into) the runtime directory,
+there is nothing gitignored expected to sit there either; if `status.sh`/
+`start.sh` reports `DIRTY`, it means the runtime checkout genuinely has
+local changes.
+
+## Config guard
+
+Independently of the runtime check, `lab:start` checks that the resolved
+**config** directory:
+
+1. exists;
+2. contains `.env.speco.local`;
+3. contains `speco.local.json`.
+
+Both files are required — a config directory with only one of the two
+fails closed (`MISSING_ENV` or `MISSING_MAP`) rather than letting Speco
+start and fail later, deep inside the Python process, once it actually
+tries to read the missing file. An absent directory reports
+`CONFIG_NOT_FOUND`. All three failure modes are fail-closed, same as the
+runtime guard. Neither file's *contents* are ever read or printed by this
+check — only their presence is verified.
 
 ## `PSOP_SPECO_RUNTIME_DIR` vs. `PSOP_SPECO_CONFIG_DIR`
 
-These are deliberately separate concepts:
+These are deliberately separate, independently-resolved, independently-
+validated concepts:
 
 - **`PSOP_SPECO_RUNTIME_DIR`** — where `speco_n8nrl.py` (the executable
-  code) lives, and therefore what the minimum-commit guard evaluates and
-  what the process's cwd is set to.
-- **`PSOP_SPECO_CONFIG_DIR`** — where the lab manager itself reads
-  `.env.speco.local` from, to look up the Keychain account name before
-  fetching the password. Defaults to `$REPO_ROOT/apps/gateway`.
+  code) lives: what the minimum-commit guard evaluates and what the
+  spawned process's cwd is set to. No safe default — fail-closed if
+  unresolved (see Fail-closed above).
+- **`PSOP_SPECO_CONFIG_DIR`** — where both the lab manager (to look up
+  the Keychain account name) and `speco_n8nrl.py` itself read
+  `.env.speco.local` / `speco.local.json` from. Defaults to
+  `$REPO_ROOT/apps/gateway` if unresolved, but its *contents* are still
+  validated (see Config guard above).
 
-In practice, for `speco_n8nrl.py` itself to find its own config, the
-runtime directory still needs a reachable `.env.speco.local` next to it
-(see Setup — normally a symlink into the config directory). The two
-variables exist so the *lab manager's own* config lookup and the
-*executable code's* location are never silently conflated in the lab
-manager's logic — but the running process's own config resolution is
-governed by where the file physically is, not by these variables.
+`lab:start` resolves both, validates each independently, and — only if
+both pass — exports `PSOP_SPECO_CONFIG_DIR` (along with the Keychain
+password, `PSOP_SPECO_PASSWORD`) into the spawned process's environment.
+`speco_n8nrl.py` reads that environment variable itself
+(`resolve_speco_config_dir()`) to decide where its own config lives —
+there is no symlink, no shared filesystem trick, and no dependency on the
+runtime and config directories being related in any way. Running it
+standalone, by hand, without `PSOP_SPECO_CONFIG_DIR` set, is unaffected:
+it still reads config from next to the script, exactly as before this
+design existed.
 
 ## `lab:status`
 
 For Speco specifically, status re-derives ground truth from the live
-process rather than trusting recorded metadata:
+process rather than trusting recorded metadata, and shows runtime and
+config as two distinct blocks:
 
 ```
 Speco          RUNNING
   pid 70582 — speco_n8nrl.py --watch
-  runtime  /Users/.../psop-runtime/apps/gateway
+  runtime  <runtime-dir>/apps/gateway
   git HEAD abc1234...
   min fix  2ff1239 OK
+  config   <config-dir>/apps/gateway
+  config   OK
 ```
 
 - `runtime` is read from the **live process's actual cwd** (`lsof -a -p
@@ -243,21 +315,24 @@ Speco          RUNNING
 - `git HEAD` and `min fix` are recomputed live from that directory, every
   time `lab:status` runs — so a runtime directory that becomes stale or
   dirty *after* the watcher was started is still reported accurately,
-  not masked by stale metadata.
-- If the minimum-commit guard would now fail for the currently-running
-  process's directory, status prints `INVALID RUNTIME` with the reason.
-  It only reports this — it never kills or restarts anything
+  not masked by stale metadata. If the minimum-commit guard would now
+  fail, status prints `INVALID RUNTIME` with the reason.
+- `config` shows the resolved config directory's path and a fresh
+  `speco_config_check` result — `INVALID CONFIG` with the reason if it
+  would now fail. Never file contents, never the ingestion key, never the
+  password.
+- Status only reports any of this — it never kills or restarts anything
   automatically.
 
 ## `lab:stop`
 
-Unchanged. Stopping Speco has never depended on the runtime directory:
-it only needs the recorded PID, confirms the live process's command line
-still matches the expected marker (protection against a recycled PID),
-and signals the process group — `SIGTERM` first, `SIGKILL` only if it
-doesn't exit in time. Never `killall`/`pkill`. This means `lab:stop`
-keeps working even if the runtime directory has since been deleted or
-moved.
+Unchanged. Stopping Speco has never depended on the runtime or config
+directories: it only needs the recorded PID, confirms the live process's
+command line still matches the expected marker (protection against a
+recycled PID), and signals the process group — `SIGTERM` first, `SIGKILL`
+only if it doesn't exit in time. Never `killall`/`pkill`. This means
+`lab:stop` keeps working even if the runtime directory has since been
+deleted or moved.
 
 ## Dedicated runtime worktree
 
@@ -268,7 +343,7 @@ tracks `origin/main` in a **detached HEAD**, never a branch:
 ```sh
 git fetch origin
 git worktree add --detach \
-  ~/02_PROJETOS/BiaoTech-Master/psop-runtime \
+  <path-to>/psop-runtime \
   origin/main
 ```
 
@@ -279,27 +354,32 @@ would look "normal" enough that, over time, someone might `git add &&
 git commit` there out of habit, reintroducing the same kind of drift this
 whole design exists to prevent.
 
-Then configure the lab manager to use it — either for the current shell:
+Then configure the lab manager to use it — for the current shell:
 
 ```sh
-export PSOP_SPECO_RUNTIME_DIR=~/02_PROJETOS/BiaoTech-Master/psop-runtime/apps/gateway
+export PSOP_SPECO_RUNTIME_DIR=<path-to>/psop-runtime/apps/gateway
+export PSOP_SPECO_CONFIG_DIR=<path-to>/psop/apps/gateway
 ```
 
 or persistently, in `.psop-lab/runtime.env`:
 
 ```
-PSOP_SPECO_RUNTIME_DIR=/Users/<you>/02_PROJETOS/BiaoTech-Master/psop-runtime/apps/gateway
+PSOP_SPECO_RUNTIME_DIR=<path-to>/psop-runtime/apps/gateway
+PSOP_SPECO_CONFIG_DIR=<path-to>/psop/apps/gateway
 ```
 
-Remember to symlink the config files into it (see Setup).
+No symlink setup is needed — the runtime worktree can be pure, code-only
+`main`, and the config directory keeps pointing at wherever
+`.env.speco.local` / `speco.local.json` already live (typically the
+development workspace).
 
 **Updating the runtime worktree** is always a deliberate, manual act —
 never automatic, so a human always decides when the physical hardware
 starts running newer code:
 
 ```sh
-git -C ~/02_PROJETOS/BiaoTech-Master/psop-runtime fetch origin
-git -C ~/02_PROJETOS/BiaoTech-Master/psop-runtime checkout --detach origin/main
+git -C <path-to>/psop-runtime fetch origin
+git -C <path-to>/psop-runtime checkout --detach origin/main
 ```
 
 Only do this when the runtime worktree has no local changes (it
@@ -320,7 +400,10 @@ only in the macOS Keychain (`security add-generic-password -a
 process-local environment variable, passed to the spawned watcher that
 way (never on a command line, so it never appears in `ps`), and is
 `unset` from the lab manager's own shell immediately after spawning.
-`.env.speco.local` and `speco.local.json` remain git-ignored, local-only
-files (or symlinks to them) — never committed, never printed by
-`lab:status` or the runtime checks in this document (they only report
-*paths*, never file contents).
+`PSOP_SPECO_CONFIG_DIR` travels to the child the same way (export, then
+unset in the parent) for interface consistency, even though it is not
+itself a secret — it only ever names a directory, never a value from
+inside it. `.env.speco.local` and `speco.local.json` remain git-ignored,
+local-only files, read only by their own path — never committed, never
+printed by `lab:status` or any of the runtime/config checks in this
+document (they only report *paths*, never file contents).
