@@ -6,6 +6,9 @@ import json
 import os
 import signal
 import socket
+import platform
+import re
+import subprocess
 import sqlite3
 import ssl
 import sys
@@ -17,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 USER_AGENT = f"PSOP-Edge-Gateway/{VERSION}"
 
 
@@ -26,10 +29,11 @@ class ProbeConfig:
     name: str
     probe_type: str
     host: str
-    port: int
+    port: int = 0
     path: str = "/"
     required: bool = True
     verify_tls: bool = False
+    expected_mac: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,11 +80,20 @@ def load_config(path: Path) -> GatewayConfig:
     probes = []
     for index, item in enumerate(rows, start=1):
         probe_type = str(item.get("type") or "tcp").lower()
-        if probe_type not in {"tcp", "http", "https", "rtsp"}:
+        if probe_type not in {"tcp", "http", "https", "rtsp", "icmp"}:
             raise ValueError(f"Unsupported probe type: {probe_type}")
+
         port = int(item.get("port") or 0)
-        if not 1 <= port <= 65535:
+        if probe_type != "icmp" and not 1 <= port <= 65535:
             raise ValueError(f"Invalid probe port at index {index}")
+
+        expected_mac_raw = item.get("expectedMac")
+        expected_mac = (
+            str(expected_mac_raw).strip().lower()
+            if expected_mac_raw
+            else None
+        )
+
         probes.append(
             ProbeConfig(
                 name=str(item.get("name") or f"probe-{index}"),
@@ -90,6 +103,7 @@ def load_config(path: Path) -> GatewayConfig:
                 path=str(item.get("path") or "/"),
                 required=bool(item.get("required", True)),
                 verify_tls=bool(item.get("verifyTls", False)),
+                expected_mac=expected_mac,
             )
         )
     spool = Path(raw.get("spoolPath") or "apps/gateway/state/pending.db")
@@ -110,6 +124,161 @@ def load_config(path: Path) -> GatewayConfig:
 
 def elapsed_ms(start: float) -> int:
     return max(0, round((time.perf_counter() - start) * 1000))
+
+
+
+def normalize_mac(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    chunks = re.findall(r"[0-9a-fA-F]{1,2}", value)
+    if len(chunks) != 6:
+        return None
+
+    return ":".join(chunk.zfill(2).lower() for chunk in chunks)
+
+
+def resolve_neighbor_mac(host: str, timeout: float) -> str | None:
+    commands: list[list[str]] = []
+
+    if platform.system() == "Darwin":
+        commands.append(["arp", "-n", host])
+    else:
+        commands.extend(
+            [
+                ["ip", "neigh", "show", host],
+                ["arp", "-n", host],
+            ]
+        )
+
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=max(0.5, timeout),
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+
+        text = (completed.stdout or "") + "\n" + (completed.stderr or "")
+        match = re.search(
+            r"\b([0-9a-fA-F]{1,2}(?::[0-9a-fA-F]{1,2}){5})\b",
+            text,
+        )
+        if match:
+            return normalize_mac(match.group(1))
+
+    return None
+
+
+def probe_icmp(config: ProbeConfig, timeout: float) -> ProbeResult:
+    start = time.perf_counter()
+    wait_seconds = max(1, round(timeout))
+
+    if platform.system() == "Darwin":
+        command = [
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            str(wait_seconds * 1000),
+            config.host,
+        ]
+    else:
+        command = [
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            str(wait_seconds),
+            config.host,
+        ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, timeout + 1.0),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return ProbeResult(
+            config.name,
+            config.probe_type,
+            config.host,
+            config.port,
+            config.required,
+            False,
+            elapsed_ms(start),
+            f"{type(error).__name__}: {error}",
+        )
+
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "ICMP failed").strip()
+        return ProbeResult(
+            config.name,
+            config.probe_type,
+            config.host,
+            config.port,
+            config.required,
+            False,
+            elapsed_ms(start),
+            detail[:240],
+        )
+
+    actual_mac = resolve_neighbor_mac(config.host, timeout)
+    expected_mac = normalize_mac(config.expected_mac)
+
+    if expected_mac:
+        if actual_mac is None:
+            return ProbeResult(
+                config.name,
+                config.probe_type,
+                config.host,
+                config.port,
+                config.required,
+                False,
+                elapsed_ms(start),
+                "ICMP reachable; MAC identity not available",
+            )
+
+        if actual_mac != expected_mac:
+            return ProbeResult(
+                config.name,
+                config.probe_type,
+                config.host,
+                config.port,
+                config.required,
+                False,
+                elapsed_ms(start),
+                (
+                    "ICMP reachable; MAC identity mismatch "
+                    f"(expected {expected_mac}, got {actual_mac})"
+                ),
+            )
+
+        detail = f"ICMP reachable; MAC verified {actual_mac}"
+    else:
+        detail = (
+            f"ICMP reachable; MAC {actual_mac}"
+            if actual_mac
+            else "ICMP reachable"
+        )
+
+    return ProbeResult(
+        config.name,
+        config.probe_type,
+        config.host,
+        config.port,
+        config.required,
+        True,
+        elapsed_ms(start),
+        detail,
+    )
 
 
 def probe_tcp(config: ProbeConfig, timeout: float) -> ProbeResult:
@@ -225,6 +394,8 @@ def probe_rtsp(config: ProbeConfig, timeout: float) -> ProbeResult:
 
 
 def run_probe(config: ProbeConfig, timeout: float) -> ProbeResult:
+    if config.probe_type == "icmp":
+        return probe_icmp(config, timeout)
     if config.probe_type == "tcp":
         return probe_tcp(config, timeout)
     if config.probe_type in {"http", "https"}:
@@ -375,12 +546,49 @@ class EdgeGateway:
         self,
         state: str,
         pending_buffer_count: int | None = None,
+        results: list[ProbeResult] | None = None,
     ) -> dict[str, Any]:
+        results = results or []
+
+        failed_optional = [
+            probe
+            for probe in results
+            if not probe.required and not probe.success
+        ]
+        failed_required = [
+            probe
+            for probe in results
+            if probe.required and not probe.success
+        ]
+
+        # A degraded classification caused ONLY by optional probes failing is a
+        # collection-quality gap, not a connectivity/health problem: report the
+        # device as "online" and surface the gap via collectionState.
+        if state == "DEGRADED" and not failed_required and failed_optional:
+            status = "online"
+        else:
+            status = "online" if state == "ONLINE" else "warning"
+
         payload: dict[str, Any] = {
             "timestamp": int(time.time()),
-            "status": "online" if state == "ONLINE" else "warning",
+            "status": status,
             **self.runtime_metadata(pending_buffer_count),
         }
+
+        if results:
+            payload["collectionState"] = (
+                "PARTIAL" if failed_optional else "COMPLETE"
+            )
+            if failed_optional:
+                payload["collectionIssues"] = [
+                    {
+                        "code": "OPTIONAL_ENRICHMENT_UNAVAILABLE",
+                        "source": "GATEWAY",
+                        "detail": f"{probe.name}: {probe.detail}"[:500],
+                    }
+                    for probe in failed_optional
+                ]
+
         if self.config.model:
             payload["model"] = self.config.model
         if self.config.firmware:
@@ -455,13 +663,13 @@ class EdgeGateway:
                 self.record_delivery_failure(error, "BUFFERED")
                 self.store.save(
                     self.config.device_id,
-                    self.build_payload(state, pending_buffer_count=1),
+                    self.build_payload(state, pending_buffer_count=1, results=results),
                 )
                 cycle["delivery"] = "BUFFERED"
                 cycle["deliveryError"] = str(error)
                 return self.finalize_cycle(cycle)
 
-        payload = self.build_payload(state)
+        payload = self.build_payload(state, results=results)
         try:
             response = self.api.send(payload)
             self.store.delete(self.config.device_id)
@@ -472,7 +680,7 @@ class EdgeGateway:
             self.record_delivery_failure(error, "BUFFERED")
             self.store.save(
                 self.config.device_id,
-                self.build_payload(state, pending_buffer_count=1),
+                self.build_payload(state, pending_buffer_count=1, results=results),
             )
             cycle["delivery"] = "BUFFERED"
             cycle["deliveryError"] = str(error)

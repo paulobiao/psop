@@ -68,6 +68,21 @@ export class LocalTelemetryService {
   ) {
     this.assertEnabled();
 
+    const details =
+      input.details === undefined
+        ? undefined
+        : input.details as Prisma.InputJsonValue;
+
+    const collectionIssues =
+      input.collectionIssues === undefined
+        ? undefined
+        : (input.collectionIssues as unknown as Prisma.InputJsonValue);
+
+    const capabilities =
+      input.capabilities === undefined
+        ? undefined
+        : (input.capabilities as unknown as Prisma.InputJsonValue);
+
     return this.prisma.deviceTelemetrySnapshot.upsert({
       where: { deviceId },
       update: {
@@ -80,6 +95,10 @@ export class LocalTelemetryService {
         uptimeSeconds: input.uptimeSeconds,
         model: input.model,
         firmware: input.firmware,
+        details,
+        collectionState: input.collectionState ?? null,
+        collectionIssues,
+        capabilities,
       },
       create: {
         deviceId,
@@ -91,6 +110,10 @@ export class LocalTelemetryService {
         uptimeSeconds: input.uptimeSeconds,
         model: input.model,
         firmware: input.firmware,
+        details,
+        collectionState: input.collectionState ?? null,
+        collectionIssues,
+        capabilities,
       },
     });
   }
@@ -134,6 +157,11 @@ export class LocalTelemetryService {
   }
 
   async storeEvent(event: Record<string, unknown>) {
+    const context =
+      event.context === undefined
+        ? undefined
+        : (event.context as Prisma.InputJsonValue);
+
     const created =
       await this.prisma.deviceConnectivityEvent.create({
         data: {
@@ -157,6 +185,7 @@ export class LocalTelemetryService {
             typeof event.expires_at === 'number'
               ? new Date(event.expires_at * 1000)
               : null,
+          context,
         },
         include: {
           device: {
@@ -214,6 +243,36 @@ export class LocalTelemetryService {
     return events.map((event) => this.toEvent(event));
   }
 
+  /**
+   * The most recent connectivity transitions for one device (newest first),
+   * bounded by `since` and `cap`. Used to reconstruct the start of a
+   * currently-open outage independently of any availability window.
+   */
+  async findRecentEventsByDevice(
+    deviceId: string,
+    since: Date,
+    cap: number,
+  ) {
+    const events =
+      await this.prisma.deviceConnectivityEvent.findMany({
+        where: {
+          deviceId,
+          detectedAt: { gte: since },
+        },
+        include: {
+          device: {
+            include: {
+              site: true,
+            },
+          },
+        },
+        orderBy: { detectedAt: 'desc' },
+        take: cap,
+      });
+
+    return events.map((event) => this.toEvent(event));
+  }
+
   async findLatestEvent(deviceId: string) {
     const event =
       await this.prisma.deviceConnectivityEvent.findFirst({
@@ -231,6 +290,52 @@ export class LocalTelemetryService {
     return event ? this.toEvent(event) : undefined;
   }
 
+  /**
+   * Every connectivity transition the device recorded inside `[start, end]`
+   * (ascending), plus the single latest transition strictly before `start` —
+   * the "anchor" that tells the availability reconstruction which state the
+   * device was already in when the window opened.
+   */
+  async findEventsInWindow(
+    deviceId: string,
+    start: Date,
+    end: Date,
+    cap: number,
+  ) {
+    const include = {
+      device: {
+        include: {
+          site: true,
+        },
+      },
+    } as const;
+
+    const [inWindow, anchor] = await Promise.all([
+      this.prisma.deviceConnectivityEvent.findMany({
+        where: {
+          deviceId,
+          detectedAt: { gte: start, lte: end },
+        },
+        include,
+        orderBy: { detectedAt: 'asc' },
+        take: cap,
+      }),
+      this.prisma.deviceConnectivityEvent.findFirst({
+        where: {
+          deviceId,
+          detectedAt: { lt: start },
+        },
+        include,
+        orderBy: { detectedAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      events: inWindow.map((event) => this.toEvent(event)),
+      anchor: anchor ? this.toEvent(anchor) : null,
+    };
+  }
+
   private toTelemetryItem(
     snapshot: {
       observedAt: Date;
@@ -241,6 +346,10 @@ export class LocalTelemetryService {
       uptimeSeconds: number | null;
       model: string | null;
       firmware: string | null;
+      details: Prisma.JsonValue | null;
+      collectionState: string | null;
+      collectionIssues: Prisma.JsonValue | null;
+      capabilities: Prisma.JsonValue | null;
     },
     device: DeviceWithSite,
   ) {
@@ -260,6 +369,10 @@ export class LocalTelemetryService {
       model: snapshot.model ?? device.model,
       firmware:
         snapshot.firmware ?? device.firmwareVersion,
+      details: snapshot.details,
+      collection_state: snapshot.collectionState,
+      collection_issues: snapshot.collectionIssues,
+      capabilities: snapshot.capabilities,
     };
   }
 
@@ -281,6 +394,7 @@ export class LocalTelemetryService {
       expires_at: event.expiresAt
         ? Math.floor(event.expiresAt.getTime() / 1000)
         : null,
+      context: event.context,
     };
   }
 }

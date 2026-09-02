@@ -27,3 +27,7 @@ apps/simulator/.venv/
 apps/gateway/gateway.local.json
 apps/gateway/.env.local
 apps/gateway/state/
+
+# Speco NVR local credentials/mapping
+apps/gateway/.env.speco.local
+apps/gateway/speco.local.json

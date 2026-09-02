@@ -13,6 +13,9 @@ import {
   IngestDeviceTelemetryDto,
 } from '../dto/ingest-device-telemetry.dto.js';
 import {
+  IngestRecorderObservationsDto,
+} from '../dto/ingest-recorder-observations.dto.js';
+import {
   DeviceTelemetryIngestionService,
 } from '../services/device-telemetry-ingestion.service.js';
 
@@ -48,4 +51,32 @@ export class TelemetryIngestionController {
       input,
     );
   }
+
+  @Public()
+  @Post('recorder-observations')
+  ingestRecorderObservations(
+    @Headers('x-device-id')
+    recorderDeviceId: string | undefined,
+    @Headers('x-device-key')
+    deviceKey: string | undefined,
+    @Body()
+    input: IngestRecorderObservationsDto,
+  ) {
+    if (
+      !recorderDeviceId ||
+      !isUUID(recorderDeviceId) ||
+      !deviceKey
+    ) {
+      throw new UnauthorizedException(
+        'Recorder credentials required',
+      );
+    }
+
+    return this.ingestion.ingestRecorderObservations(
+      recorderDeviceId,
+      deviceKey,
+      input,
+    );
+  }
+
 }

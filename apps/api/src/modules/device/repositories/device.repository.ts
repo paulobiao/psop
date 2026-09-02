@@ -108,6 +108,54 @@ export class DeviceRepository {
     });
   }
 
+  async findAllObservableDevicesWithSite(
+    organizationId?: string,
+  ): Promise<DeviceWithSite[]> {
+    return this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          {
+            monitoringMode: 'DIRECT',
+            deviceType: {
+              in: [
+                'CAMERA',
+                'RECORDER',
+                'GATEWAY',
+              ],
+            },
+          },
+          {
+            monitoringMode: 'VIA_GATEWAY',
+            deviceType: 'CAMERA',
+            gatewayDeviceId: {
+              not: null,
+            },
+          },
+        ],
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
+      },
+      include: {
+        site: true,
+      },
+      orderBy: [
+        {
+          siteId: 'asc',
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+  }
+
   async findById(
     id: string,
     organizationId?: string,

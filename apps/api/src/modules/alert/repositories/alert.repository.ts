@@ -5,6 +5,7 @@ import type {
   Prisma,
 } from '../../../../generated/prisma/client.js';
 import { PrismaService } from '../../../database/prisma.service.js';
+import type { ConnectivityContext } from '../types/connectivity-context.type.js';
 
 export type AlertWithDevice = Prisma.AlertGetPayload<{
   include: {
@@ -28,6 +29,7 @@ interface OpenConnectivityAlertInput {
   title: string;
   message: string;
   connectivityState: string;
+  context: ConnectivityContext;
 }
 
 @Injectable()
@@ -267,16 +269,34 @@ export class AlertRepository {
     const dedupKey =
       `${input.deviceId}:DEVICE_CONNECTIVITY`;
 
+    const existing =
+      await this.prisma.alert.findUnique({
+        where: {
+          dedupKey,
+        },
+        select: {
+          severity: true,
+        },
+      });
+
+    const peakSeverity: AlertSeverity =
+      existing?.severity === 'CRITICAL'
+        ? 'CRITICAL'
+        : input.severity;
+
+    const context = input.context as unknown as Prisma.InputJsonValue;
+
     return this.prisma.alert.upsert({
       where: {
         dedupKey,
       },
       update: {
         status: 'OPEN',
-        severity: input.severity,
+        severity: peakSeverity,
         title: input.title,
         message: input.message,
         connectivityState: input.connectivityState,
+        context,
         lastDetectedAt: now,
         resolvedAt: null,
       },
@@ -288,6 +308,7 @@ export class AlertRepository {
         title: input.title,
         message: input.message,
         connectivityState: input.connectivityState,
+        context,
         dedupKey,
         openedAt: now,
         lastDetectedAt: now,
@@ -302,9 +323,27 @@ export class AlertRepository {
     });
   }
 
+  async touchActiveConnectivityAlert(
+    deviceId: string,
+    context: ConnectivityContext,
+  ): Promise<void> {
+    await this.prisma.alert.updateMany({
+      where: {
+        deviceId,
+        type: 'DEVICE_CONNECTIVITY',
+        status: 'OPEN',
+      },
+      data: {
+        context: context as unknown as Prisma.InputJsonValue,
+        lastDetectedAt: new Date(),
+      },
+    });
+  }
+
   async resolveConnectivityAlert(
     deviceId: string,
     connectivityState = 'ONLINE',
+    context?: ConnectivityContext,
   ): Promise<AlertWithDevice | null> {
     const alert = await this.prisma.alert.findFirst({
       where: {
@@ -325,6 +364,9 @@ export class AlertRepository {
       data: {
         status: 'RESOLVED',
         connectivityState,
+        ...(context !== undefined
+          ? { context: context as unknown as Prisma.InputJsonValue }
+          : {}),
         dedupKey: null,
         resolvedAt: new Date(),
         lastDetectedAt: new Date(),

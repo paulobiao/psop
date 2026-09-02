@@ -93,6 +93,8 @@ describe('AlertService notification resilience', () => {
       jest.fn(),
     resolveById:
       jest.fn(),
+    touchActiveConnectivityAlert:
+      jest.fn(),
     findById:
       jest.fn(),
     findAll:
@@ -108,6 +110,18 @@ describe('AlertService notification resilience', () => {
       jest.fn(),
     handleIncidentRecovered:
       jest.fn(),
+  };
+
+  const baseContext = {
+    reasons: ['HEARTBEAT_OVERDUE'],
+    monitoringSource: 'DIRECT',
+    individualVerification: 'DIRECT',
+    observerDeviceId: null,
+    observerDeviceName: null,
+    channelId: null,
+    channelNumber: null,
+    lastHeartbeatAt: null,
+    ageSeconds: 120,
   };
 
   let service:
@@ -163,6 +177,7 @@ describe('AlertService notification resilience', () => {
           externalId:
             alert.device.externalId,
           state: 'OFFLINE',
+          context: baseContext,
         }),
     ).resolves.toBe(alert);
   });
@@ -199,6 +214,173 @@ describe('AlertService notification resilience', () => {
         ),
     ).resolves.toBe(
       recovered,
+    );
+  });
+
+  it('does not trigger incident-opened notifications when touching an active incident', async () => {
+    await service.touchConnectivityAlert(
+      alert.deviceId,
+      baseContext,
+    );
+
+    expect(
+      repository.openConnectivityAlert,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      notifications.handleIncidentOpened,
+    ).not.toHaveBeenCalled();
+  });
+});
+
+describe('AlertService operational incident copy', () => {
+  const repository = {
+    openConnectivityAlert: jest.fn(),
+    resolveConnectivityAlert: jest.fn(),
+    resolveById: jest.fn(),
+    touchActiveConnectivityAlert: jest.fn(),
+    findById: jest.fn(),
+    findAll: jest.fn(),
+    findRecentConnectivityIncidents: jest.fn(),
+    getConnectivityIncidentAnalytics: jest.fn(),
+  };
+
+  const notifications = {
+    handleIncidentOpened: jest.fn(),
+    handleIncidentRecovered: jest.fn(),
+  };
+
+  let service: AlertService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    repository.openConnectivityAlert.mockImplementation(
+      (input) => Promise.resolve({ ...input, id: 'alert-1' }),
+    );
+
+    service = new AlertService(
+      repository as any,
+      notifications as any,
+    );
+  });
+
+  const baseInput = {
+    deviceId: 'device-1',
+    deviceName: 'Hikvision 01',
+    siteCode: 'DFB-01',
+    externalId: 'CAM-01',
+  };
+
+  it('builds a recorder-verified offline message naming the resolved observer and channel', async () => {
+    const alert = await service.openConnectivityAlert({
+      ...baseInput,
+      state: 'OFFLINE',
+      context: {
+        reasons: ['REPORTED_OFFLINE', 'RECORDER_VERIFIED_OFFLINE'],
+        monitoringSource: 'RECORDER_OBSERVED',
+        individualVerification: 'RECORDER_VERIFIED',
+        observerDeviceId: 'recorder-1',
+        observerDeviceName: 'NVR Speco',
+        channelId: 'ch-1',
+        channelNumber: 1,
+        lastHeartbeatAt: null,
+        ageSeconds: 8,
+      },
+    });
+
+    expect(alert.title).toBe('Hikvision 01 is offline');
+    expect(alert.message).toBe(
+      'Hikvision 01 is offline according to NVR Speco on channel 1.',
+    );
+  });
+
+  it('falls back to "its recorder" when the observer cannot be resolved', async () => {
+    const alert = await service.openConnectivityAlert({
+      ...baseInput,
+      state: 'OFFLINE',
+      context: {
+        reasons: ['REPORTED_OFFLINE', 'RECORDER_VERIFIED_OFFLINE'],
+        monitoringSource: 'RECORDER_OBSERVED',
+        individualVerification: 'RECORDER_VERIFIED',
+        observerDeviceId: null,
+        observerDeviceName: null,
+        channelId: null,
+        channelNumber: null,
+        lastHeartbeatAt: null,
+        ageSeconds: 8,
+      },
+    });
+
+    expect(alert.message).toBe(
+      'Hikvision 01 is offline according to its recorder.',
+    );
+  });
+
+  it('builds a heartbeat-overdue message for direct devices', async () => {
+    const alert = await service.openConnectivityAlert({
+      ...baseInput,
+      state: 'OFFLINE',
+      context: {
+        reasons: ['HEARTBEAT_OVERDUE'],
+        monitoringSource: 'DIRECT',
+        individualVerification: 'DIRECT',
+        observerDeviceId: null,
+        observerDeviceName: null,
+        channelId: null,
+        channelNumber: null,
+        lastHeartbeatAt: null,
+        ageSeconds: 900,
+      },
+    });
+
+    expect(alert.message).toBe(
+      'Hikvision 01 stopped reporting telemetry.',
+    );
+  });
+
+  it('builds a high-temperature degraded message', async () => {
+    const alert = await service.openConnectivityAlert({
+      ...baseInput,
+      state: 'DEGRADED',
+      context: {
+        reasons: ['HIGH_TEMPERATURE'],
+        monitoringSource: 'DIRECT',
+        individualVerification: 'DIRECT',
+        observerDeviceId: null,
+        observerDeviceName: null,
+        channelId: null,
+        channelNumber: null,
+        lastHeartbeatAt: null,
+        ageSeconds: 5,
+      },
+    });
+
+    expect(alert.title).toBe('Hikvision 01 is degraded');
+    expect(alert.message).toBe(
+      'Hikvision 01 is degraded because temperature exceeded the configured threshold.',
+    );
+  });
+
+  it('builds a high-storage degraded message', async () => {
+    const alert = await service.openConnectivityAlert({
+      ...baseInput,
+      state: 'DEGRADED',
+      context: {
+        reasons: ['HIGH_STORAGE_USAGE'],
+        monitoringSource: 'DIRECT',
+        individualVerification: 'DIRECT',
+        observerDeviceId: null,
+        observerDeviceName: null,
+        channelId: null,
+        channelNumber: null,
+        lastHeartbeatAt: null,
+        ageSeconds: 5,
+      },
+    });
+
+    expect(alert.message).toBe(
+      'Hikvision 01 is degraded because storage usage exceeded the configured threshold.',
     );
   });
 });

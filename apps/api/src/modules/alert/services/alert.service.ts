@@ -10,6 +10,7 @@ import type {
 } from '../../../../generated/prisma/client.js';
 import { NotificationService } from '../../notification/services/notification.service.js';
 import { AlertRepository } from '../repositories/alert.repository.js';
+import type { ConnectivityContext } from '../types/connectivity-context.type.js';
 
 interface ConnectivityAlertInput {
   deviceId: string;
@@ -17,6 +18,7 @@ interface ConnectivityAlertInput {
   siteCode: string;
   externalId: string;
   state: string;
+  context: ConnectivityContext;
 }
 
 @Injectable()
@@ -142,16 +144,10 @@ export class AlertService {
         ? 'CRITICAL'
         : 'WARNING';
 
-    const title =
-      input.state === 'OFFLINE'
-        ? `Device ${input.externalId} is offline`
-        : input.state === 'DEGRADED'
-          ? `Device ${input.externalId} is degraded`
-          : `Device ${input.externalId} is not reporting normally`;
-
-    const message =
-      `${input.deviceName} at site ${input.siteCode} ` +
-      `has connectivity state ${input.state}.`;
+    const { title, message } =
+      this.buildIncidentCopy(
+        input,
+      );
 
     const alert =
       await this.alertRepository
@@ -163,6 +159,8 @@ export class AlertService {
           message,
           connectivityState:
             input.state,
+          context:
+            input.context,
         });
 
     await this.safeNotification(
@@ -176,16 +174,29 @@ export class AlertService {
     return alert;
   }
 
+  async touchConnectivityAlert(
+    deviceId: string,
+    context: ConnectivityContext,
+  ): Promise<void> {
+    await this.alertRepository
+      .touchActiveConnectivityAlert(
+        deviceId,
+        context,
+      );
+  }
+
   async resolveConnectivityAlert(
     deviceId: string,
     connectivityState =
       'ONLINE',
+    context?: ConnectivityContext,
   ) {
     const alert =
       await this.alertRepository
         .resolveConnectivityAlert(
           deviceId,
           connectivityState,
+          context,
         );
 
     if (alert) {
@@ -199,6 +210,61 @@ export class AlertService {
     }
 
     return alert;
+  }
+
+  private buildIncidentCopy(
+    input: ConnectivityAlertInput,
+  ): { title: string; message: string } {
+    const { deviceName, siteCode, state, context } = input;
+    const reasons = context.reasons;
+
+    if (reasons.includes('RECORDER_VERIFIED_OFFLINE')) {
+      const observerLabel =
+        context.observerDeviceName ?? 'its recorder';
+      const channelSuffix =
+        context.channelNumber !== null
+          ? ` on channel ${context.channelNumber}`
+          : '';
+
+      return {
+        title: `${deviceName} is offline`,
+        message: `${deviceName} is offline according to ${observerLabel}${channelSuffix}.`,
+      };
+    }
+
+    if (reasons.includes('HEARTBEAT_OVERDUE')) {
+      return {
+        title: `${deviceName} is offline`,
+        message: `${deviceName} stopped reporting telemetry.`,
+      };
+    }
+
+    if (reasons.includes('HIGH_TEMPERATURE')) {
+      return {
+        title: `${deviceName} is degraded`,
+        message: `${deviceName} is degraded because temperature exceeded the configured threshold.`,
+      };
+    }
+
+    if (reasons.includes('HIGH_STORAGE_USAGE')) {
+      return {
+        title: `${deviceName} is degraded`,
+        message: `${deviceName} is degraded because storage usage exceeded the configured threshold.`,
+      };
+    }
+
+    const title =
+      state === 'OFFLINE'
+        ? `${deviceName} is offline`
+        : state === 'DEGRADED'
+          ? `${deviceName} is degraded`
+          : `${deviceName} is not reporting normally`;
+
+    const message =
+      `${deviceName} at site ${siteCode} ` +
+      `has connectivity state ${state}.`;
+
+    return { title, message };
   }
 
   private async safeNotification(
