@@ -17,7 +17,10 @@
     "test:gateway": "python3 -m unittest discover -s apps/gateway/tests -p 'test_*.py' -v",
     "gateway:diagnose": "python3 apps/gateway/psop_gateway.py --config apps/gateway/gateway.local.json --diagnose",
     "gateway:once": "bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json --once",
-    "gateway:run": "bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json"
+    "gateway:run": "bash apps/gateway/run_gateway.sh --config apps/gateway/gateway.local.json",
+    "lab:start": "bash scripts/lab/start.sh",
+    "lab:status": "bash scripts/lab/status.sh",
+    "lab:stop": "bash scripts/lab/stop.sh"
   },
   "keywords": [],
   "author": "",

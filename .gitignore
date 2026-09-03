@@ -31,3 +31,7 @@ apps/gateway/state/
 # Speco NVR local credentials/mapping
 apps/gateway/.env.speco.local
 apps/gateway/speco.local.json
+
+# PSOP local lab manager runtime state (pids, logs, runtime.env, metadata).
+# Machine-local only, never versioned.
+.psop-lab/

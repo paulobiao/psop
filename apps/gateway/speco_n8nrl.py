@@ -726,8 +726,30 @@ def enrich_discovered_children(
     return result
 
 LOCAL_DIR = Path(__file__).resolve().parent
-DEFAULT_LOCAL_ENV = LOCAL_DIR / ".env.speco.local"
-DEFAULT_LOCAL_MAP = LOCAL_DIR / "speco.local.json"
+
+
+def resolve_speco_config_dir(
+    local_dir: Path, env: dict[str, str] | None = None
+) -> Path:
+    """Where .env.speco.local / speco.local.json are read from.
+
+    Standalone use: config sits next to the script (`local_dir`), unchanged
+    from before this existed. The PSOP lab manager may run this script from
+    a separate, code-only runtime directory and point config elsewhere via
+    PSOP_SPECO_CONFIG_DIR, so the two are never silently coupled through a
+    symlink. A plain function (rather than a module-level constant computed
+    directly) so it can be unit-tested with an explicit `env` without
+    reloading this module — reloading it would break class identity
+    (SpecoError et al.) for every other test module that already imported
+    this one in the same process.
+    """
+    source = os.environ if env is None else env
+    return Path(source.get("PSOP_SPECO_CONFIG_DIR", str(local_dir))).expanduser()
+
+
+CONFIG_DIR = resolve_speco_config_dir(LOCAL_DIR)
+DEFAULT_LOCAL_ENV = CONFIG_DIR / ".env.speco.local"
+DEFAULT_LOCAL_MAP = CONFIG_DIR / "speco.local.json"
 
 
 def _load_simple_env(path: Path) -> dict[str, str]:
