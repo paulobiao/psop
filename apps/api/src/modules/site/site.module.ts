@@ -6,5 +6,6 @@ import { SiteService } from './services/site.service';
 @Module({
   controllers: [SiteController],
   providers: [SiteService, SiteRepository],
+  exports: [SiteService],
 })
 export class SiteModule {}

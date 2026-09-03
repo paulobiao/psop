@@ -11,6 +11,32 @@ export type DeviceWithSite = Prisma.DeviceGetPayload<{
   };
 }>;
 
+/**
+ * The single source of truth for "PSOP can individually observe this device":
+ * a directly-monitored camera / recorder / gateway, or a recorder-observed
+ * (VIA_GATEWAY) camera that has a parent assigned. Every "observable device"
+ * query composes this exact predicate so the rule never drifts between callers.
+ */
+const OBSERVABLE_DEVICE_OR: Prisma.DeviceWhereInput[] = [
+  {
+    monitoringMode: 'DIRECT',
+    deviceType: {
+      in: [
+        'CAMERA',
+        'RECORDER',
+        'GATEWAY',
+      ],
+    },
+  },
+  {
+    monitoringMode: 'VIA_GATEWAY',
+    deviceType: 'CAMERA',
+    gatewayDeviceId: {
+      not: null,
+    },
+  },
+];
+
 @Injectable()
 export class DeviceRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -114,25 +140,50 @@ export class DeviceRepository {
     return this.prisma.device.findMany({
       where: {
         deletedAt: null,
-        OR: [
-          {
-            monitoringMode: 'DIRECT',
-            deviceType: {
-              in: [
-                'CAMERA',
-                'RECORDER',
-                'GATEWAY',
-              ],
-            },
-          },
-          {
-            monitoringMode: 'VIA_GATEWAY',
-            deviceType: 'CAMERA',
-            gatewayDeviceId: {
-              not: null,
-            },
-          },
-        ],
+        OR: OBSERVABLE_DEVICE_OR,
+        ...(organizationId
+          ? {
+              site: {
+                organizationId,
+                deletedAt: null,
+              },
+            }
+          : {}),
+      },
+      include: {
+        site: true,
+      },
+      orderBy: [
+        {
+          siteId: 'asc',
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+  }
+
+  /**
+   * The Site & Fleet Reliability population: individually-observable devices
+   * (identical predicate to `findAllObservableDevicesWithSite`) further
+   * restricted to `status === ACTIVE`.
+   *
+   * Non-ACTIVE devices (INACTIVE / MAINTENANCE / DECOMMISSIONED) are
+   * administratively outside the operational fleet and PSOP's ingestion paths
+   * (`device-telemetry-ingestion`, `recorder-observation`) already reject their
+   * telemetry, so including them in a reliability aggregate would only ever
+   * decay coverage/availability with data nobody can refresh. Their individual
+   * history stays fully queryable through `GET /devices/:id/availability`.
+   */
+  async findAllReliabilityEligibleDevicesWithSite(
+    organizationId?: string,
+  ): Promise<DeviceWithSite[]> {
+    return this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        OR: OBSERVABLE_DEVICE_OR,
         ...(organizationId
           ? {
               site: {

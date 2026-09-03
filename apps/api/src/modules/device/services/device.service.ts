@@ -7,7 +7,10 @@ import type { Device } from '../../../../generated/prisma/client.js';
 import { AlertService } from '../../alert/services/alert.service.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
-import { DeviceRepository } from '../repositories/device.repository';
+import {
+  DeviceRepository,
+  type DeviceWithSite,
+} from '../repositories/device.repository';
 
 type MonitoringMode =
   | 'DIRECT'
@@ -25,6 +28,20 @@ export class DeviceService {
     organizationId: string,
   ): Promise<Device[]> {
     return this.deviceRepository.findAll(organizationId);
+  }
+
+  /**
+   * Devices eligible for Site & Fleet Reliability aggregation: the
+   * individually-observable devices (same predicate used everywhere else)
+   * restricted to `status === ACTIVE`. See
+   * `DeviceRepository.findAllReliabilityEligibleDevicesWithSite`.
+   */
+  async findAllReliabilityEligibleDevicesWithSite(
+    organizationId: string,
+  ): Promise<DeviceWithSite[]> {
+    return this.deviceRepository.findAllReliabilityEligibleDevicesWithSite(
+      organizationId,
+    );
   }
 
   async findOne(

@@ -57,16 +57,63 @@ interface Boundary {
   event: ParsedEvent | null;
 }
 
-interface ResolvedPeriod {
+export interface ResolvedPeriod {
   requestedFrom: string;
   requestedTo: string;
   fromMs: number;
   toMs: number;
+  /** Effective seconds used for the math (`toMs` clamped to now). */
+  durationSeconds: number;
   window: AvailabilityWindowPreset | null;
   /** The caller asked for a `to` in the future and it was pulled back to now. */
   clampedToNow: boolean;
   /** The effective window end is "now" (a preset window, or a clamped future `to`). */
   endsAtNow: boolean;
+}
+
+/**
+ * The deterministic core of the per-device availability reconstruction, shared
+ * verbatim between `getAvailability` (the device endpoint) and Site / Fleet
+ * Reliability. It carries every figure both callers need so neither ever
+ * re-implements the availability math.
+ */
+export interface DeviceAvailabilityReconstruction {
+  durationSeconds: number;
+  totals: {
+    uptimeSeconds: number;
+    downtimeSeconds: number;
+    unknownSeconds: number;
+    neverSeenSeconds: number;
+    noDataSeconds: number;
+  };
+  confirmedObservedSeconds: number;
+  hasHistory: boolean;
+  unavailableReason: AvailabilityUnavailableReason | null;
+  confirmedAvailabilityPercentage: number | null;
+  percentage: number | null;
+  coveragePercentage: number;
+  intervals: AvailabilityOutageInterval[];
+  openOutage: AvailabilityOutageInterval | null;
+  longest: AvailabilityOutageInterval | null;
+  lastOutageAt: string | null;
+  lastRecoveryAt: string | null;
+  currentOutageStartMs: number | null;
+  current: DeviceAvailability['current'];
+  currentLinkState: LinkState | null;
+  observerDeviceName: string | null;
+  monitoring: {
+    source: string;
+    individualVerification: string;
+    observerDeviceId: string | null;
+  };
+  coverageMeta: {
+    eventCount: number;
+    firstEventAt: string | null;
+    lastEventAt: string | null;
+    hasAnchorBeforeWindow: boolean;
+    truncated: boolean;
+  };
+  limitations: string[];
 }
 
 type OperationalSnapshot = Awaited<
@@ -106,14 +153,116 @@ export class DeviceAvailabilityService {
     const now = new Date();
     const period = this.resolvePeriod(query, now);
 
+    const r = await this.reconstruct(device, period, now);
+
+    return {
+      deviceId: device.id,
+      generatedAt: now.toISOString(),
+      device: {
+        id: device.id,
+        name: device.name,
+        externalId: device.externalId,
+        deviceType: device.deviceType,
+        monitoringMode: device.monitoringMode,
+        site: {
+          id: device.site.id,
+          code: device.site.code,
+          name: device.site.name,
+        },
+      },
+      monitoring: {
+        source: r.monitoring.source,
+        individualVerification: r.monitoring.individualVerification,
+        observerDeviceId: r.monitoring.observerDeviceId,
+        observerDeviceName: r.observerDeviceName,
+      },
+      period: {
+        requestedFrom: period.requestedFrom,
+        requestedTo: period.requestedTo,
+        from: new Date(period.fromMs).toISOString(),
+        to: new Date(period.toMs).toISOString(),
+        durationSeconds: r.durationSeconds,
+        window: period.window,
+        clampedToNow: period.clampedToNow,
+      },
+      current: r.current,
+      availability: {
+        percentage: r.percentage,
+        confirmedAvailabilityPercentage: r.confirmedAvailabilityPercentage,
+        unavailableReason: r.unavailableReason,
+        uptimeSeconds: r.totals.uptimeSeconds,
+        downtimeSeconds: r.totals.downtimeSeconds,
+        unknownSeconds: r.totals.unknownSeconds,
+        neverSeenSeconds: r.totals.neverSeenSeconds,
+        noDataSeconds: r.totals.noDataSeconds,
+        confirmedObservedSeconds: r.confirmedObservedSeconds,
+        coveragePercentage: r.coveragePercentage,
+      },
+      outages: {
+        count: r.intervals.length,
+        totalDowntimeSeconds: r.totals.downtimeSeconds,
+        longestSeconds: r.longest?.durationSeconds ?? 0,
+        longest: r.longest,
+        lastOutageAt: r.lastOutageAt,
+        // Only a confirmed OFFLINE -> ONLINE transition counts as a recovery.
+        lastRecoveryAt: r.lastRecoveryAt,
+        openOutage: r.openOutage,
+      },
+      intervals: r.intervals,
+      coverage: {
+        eventCount: r.coverageMeta.eventCount,
+        firstEventAt: r.coverageMeta.firstEventAt,
+        lastEventAt: r.coverageMeta.lastEventAt,
+        hasAnchorBeforeWindow: r.coverageMeta.hasAnchorBeforeWindow,
+        truncated: r.coverageMeta.truncated,
+      },
+      limitations: r.limitations,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // reusable reconstruction core (shared with Site / Fleet Reliability)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve the availability period exactly as `getAvailability` does. Exposed
+   * so Site / Fleet Reliability resolve one identical period for the whole
+   * population instead of re-deriving window semantics.
+   */
+  resolveAvailabilityPeriod(
+    query: DeviceAvailabilityQueryDto,
+    now: Date,
+  ): ResolvedPeriod {
+    return this.resolvePeriod(query, now);
+  }
+
+  /**
+   * Reconstruct availability for a device that the caller has ALREADY resolved
+   * inside the caller's organization and confirmed eligible (via the observable
+   * / reliability-eligible repository query). Runs the exact same pipeline as
+   * `getAvailability`. Read-only.
+   */
+  async reconstructForResolvedDevice(
+    device: DeviceWithSite,
+    period: ResolvedPeriod,
+    now: Date,
+  ): Promise<DeviceAvailabilityReconstruction> {
+    return this.reconstruct(device, period, now);
+  }
+
+  private async reconstruct(
+    device: DeviceWithSite,
+    period: ResolvedPeriod,
+    now: Date,
+  ): Promise<DeviceAvailabilityReconstruction> {
     const operational = await this.deviceTelemetryService.findByDeviceId(
-      deviceId,
-      organizationId,
+      device.id,
+      device.site.organizationId,
     );
 
     const { anchor, events, truncated } =
       await this.connectivityEventsService.collectEventWindow(
-        deviceId,
+        device.id,
         new Date(period.fromMs),
         new Date(period.toMs),
       );
@@ -133,10 +282,7 @@ export class DeviceAvailabilityService {
       operational,
     );
 
-    const durationSeconds = Math.max(
-      0,
-      Math.floor((period.toMs - period.fromMs) / 1000),
-    );
+    const durationSeconds = period.durationSeconds;
 
     const confirmedObservedSeconds =
       totals.uptimeSeconds + totals.downtimeSeconds;
@@ -160,9 +306,7 @@ export class DeviceAvailabilityService {
 
     const confirmedAvailabilityPercentage =
       confirmedObservedSeconds > 0
-        ? this.round4(
-            (totals.uptimeSeconds / confirmedObservedSeconds) * 100,
-          )
+        ? this.round4((totals.uptimeSeconds / confirmedObservedSeconds) * 100)
         : null;
 
     // `percentage` is availability of the WHOLE period — a number only when
@@ -199,7 +343,11 @@ export class DeviceAvailabilityService {
       now,
     );
 
-    const current = this.buildCurrent(operational, currentOutageStartMs, period);
+    const current = this.buildCurrent(
+      operational,
+      currentOutageStartMs,
+      period,
+    );
 
     const observerDeviceName =
       intervals.find((interval) => interval.observerDeviceName)
@@ -218,66 +366,33 @@ export class DeviceAvailabilityService {
     });
 
     return {
-      deviceId: device.id,
-      generatedAt: now.toISOString(),
-      device: {
-        id: device.id,
-        name: device.name,
-        externalId: device.externalId,
-        deviceType: device.deviceType,
-        monitoringMode: device.monitoringMode,
-        site: {
-          id: device.site.id,
-          code: device.site.code,
-          name: device.site.name,
-        },
-      },
+      durationSeconds,
+      totals,
+      confirmedObservedSeconds,
+      hasHistory,
+      unavailableReason,
+      confirmedAvailabilityPercentage,
+      percentage,
+      coveragePercentage,
+      intervals,
+      openOutage,
+      longest,
+      lastOutageAt:
+        intervals.length > 0 ? intervals[intervals.length - 1].startedAt : null,
+      lastRecoveryAt:
+        confirmedRecoveries.length > 0
+          ? confirmedRecoveries[confirmedRecoveries.length - 1].endedAt
+          : null,
+      currentOutageStartMs,
+      current,
+      currentLinkState: operational.connectivity.linkState ?? null,
+      observerDeviceName,
       monitoring: {
         source: operational.monitoring.source,
         individualVerification: operational.monitoring.individualVerification,
         observerDeviceId: operational.monitoring.observerDeviceId,
-        observerDeviceName,
       },
-      period: {
-        requestedFrom: period.requestedFrom,
-        requestedTo: period.requestedTo,
-        from: new Date(period.fromMs).toISOString(),
-        to: new Date(period.toMs).toISOString(),
-        durationSeconds,
-        window: period.window,
-        clampedToNow: period.clampedToNow,
-      },
-      current,
-      availability: {
-        percentage,
-        confirmedAvailabilityPercentage,
-        unavailableReason,
-        uptimeSeconds: totals.uptimeSeconds,
-        downtimeSeconds: totals.downtimeSeconds,
-        unknownSeconds: totals.unknownSeconds,
-        neverSeenSeconds: totals.neverSeenSeconds,
-        noDataSeconds: totals.noDataSeconds,
-        confirmedObservedSeconds,
-        coveragePercentage,
-      },
-      outages: {
-        count: intervals.length,
-        totalDowntimeSeconds: totals.downtimeSeconds,
-        longestSeconds: longest?.durationSeconds ?? 0,
-        longest,
-        lastOutageAt:
-          intervals.length > 0
-            ? intervals[intervals.length - 1].startedAt
-            : null,
-        // Only a confirmed OFFLINE -> ONLINE transition counts as a recovery.
-        lastRecoveryAt:
-          confirmedRecoveries.length > 0
-            ? confirmedRecoveries[confirmedRecoveries.length - 1].endedAt
-            : null,
-        openOutage,
-      },
-      intervals,
-      coverage: {
+      coverageMeta: {
         eventCount: parsedEvents.length,
         firstEventAt:
           parsedEvents.length > 0
@@ -363,6 +478,7 @@ export class DeviceAvailabilityService {
       requestedTo: new Date(requestedToMs).toISOString(),
       fromMs: requestedFromMs,
       toMs,
+      durationSeconds: Math.max(0, Math.floor((toMs - requestedFromMs) / 1000)),
       window,
       clampedToNow: requestedToMs > nowMs,
       endsAtNow: toMs >= nowMs - 1000,
@@ -463,8 +579,7 @@ export class DeviceAvailabilityService {
     operational: OperationalSnapshot,
   ): AvailabilityOutageInterval[] {
     const intervals: AvailabilityOutageInterval[] = [];
-    const currentLinkOffline =
-      operational.connectivity.linkState === 'OFFLINE';
+    const currentLinkOffline = operational.connectivity.linkState === 'OFFLINE';
 
     let runStartIndex: number | null = null;
 
@@ -657,8 +772,10 @@ export class DeviceAvailabilityService {
       return null;
     }
 
-    const recent =
-      await this.connectivityEventsService.findRecentTransitions(deviceId, now);
+    const recent = await this.connectivityEventsService.findRecentTransitions(
+      deviceId,
+      now,
+    );
 
     const parsed = recent
       .map((event) => this.parseEvent(event))
@@ -826,9 +943,7 @@ export class DeviceAvailabilityService {
     const context = this.asObject(raw.context);
 
     const detectedAtMs =
-      this.parseDateMs(raw.detected_at) ??
-      this.toNumber(raw.timestamp) ??
-      0;
+      this.parseDateMs(raw.detected_at) ?? this.toNumber(raw.timestamp) ?? 0;
 
     return {
       detectedAtMs,
