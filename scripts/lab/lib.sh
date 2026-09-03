@@ -210,13 +210,30 @@ EOF
 # ONLINE heartbeat while the NVR was physically unreachable. See
 # docs/LAB_RUNTIME.md for the full incident and the design this codifies.
 
-# The commit that introduced recorderReachable/watch_tick/RELOGIN_ semantics
-# ("fix: stop stale Speco heartbeats when recorder is unreachable"). Any
-# runtime directory must have this commit as an ancestor of its HEAD.
-# Overridable (e.g. by tests); not meant to be changed for normal use.
-SPECO_MIN_FIX_COMMIT="${SPECO_MIN_FIX_COMMIT:-2ff1239292461bba2bde2c5af7a248cbda275d05}"
+# The commit that introduced the FULL runtime contract this lab manager
+# depends on: not just the stale-heartbeat fix (2ff1239) but also the
+# adapter's PSOP_SPECO_CONFIG_DIR support (0edb85a) that lets the lab
+# manager pass it a config directory independent of the runtime directory.
+# A runtime whose HEAD only descends from 2ff1239 has the heartbeat fix
+# but silently ignores PSOP_SPECO_CONFIG_DIR — incompatible with this lab
+# manager's contract, not just "a bit behind". Any runtime directory must
+# have THIS commit as an ancestor of its HEAD. Overridable (e.g. by
+# tests); not meant to be changed for normal use.
+SPECO_MIN_RUNTIME_COMMIT="${SPECO_MIN_RUNTIME_COMMIT:-0edb85a719469ea055c4d7e099c910ed9bf6eb32}"
 
 _lab_runtime_env_file() { printf '%s/runtime.env' "$LAB_DIR"; }
+
+# _is_absolute_path PATH - true if PATH starts with "/". Runtime and config
+# directories must be absolute: a relative path's meaning would depend on
+# whatever the lab manager's cwd happens to be at the moment lab:start
+# runs, which is exactly the kind of implicit, environment-dependent
+# resolution this whole design exists to eliminate.
+_is_absolute_path() {
+  case "$1" in
+    /*) return 0 ;;
+    *)  return 1 ;;
+  esac
+}
 
 # lab_runtime_env_get KEY - safe, non-eval reader for .psop-lab/runtime.env.
 # Only a fixed whitelist of keys is accepted, plain "KEY=value" lines are
@@ -300,10 +317,13 @@ speco_runtime_head() {
 # reachable config via PSOP_SPECO_CONFIG_DIR at spawn time (see start.sh) —
 # that is what makes the two independent instead of implicitly coupled.
 speco_runtime_check() {
-  local dir="$1" min="${2:-$SPECO_MIN_FIX_COMMIT}"
+  local dir="$1" min="${2:-$SPECO_MIN_RUNTIME_COMMIT}"
 
   if [ -z "$dir" ]; then
     printf 'NOT_CONFIGURED'; return 1
+  fi
+  if ! _is_absolute_path "$dir"; then
+    printf 'NOT_ABSOLUTE'; return 1
   fi
   if [ ! -d "$dir" ]; then
     printf 'NOT_FOUND'; return 1
@@ -326,15 +346,16 @@ speco_runtime_check() {
 # speco_runtime_check_message TOKEN DIR [MIN_COMMIT] - human-readable detail
 # for a status token returned by speco_runtime_check.
 speco_runtime_check_message() {
-  local token="$1" dir="$2" min="${3:-$SPECO_MIN_FIX_COMMIT}"
+  local token="$1" dir="$2" min="${3:-$SPECO_MIN_RUNTIME_COMMIT}"
   case "$token" in
     NOT_CONFIGURED)
       printf 'Speco runtime is not configured (set PSOP_SPECO_RUNTIME_DIR, or add it to %s)' \
         "$(_lab_runtime_env_file)" ;;
+    NOT_ABSOLUTE)   printf 'runtime directory must be an absolute path, got: %s' "$dir" ;;
     NOT_FOUND)      printf 'runtime directory does not exist: %s' "$dir" ;;
     MISSING_FILE)   printf 'speco_n8nrl.py not found in: %s' "$dir" ;;
     NOT_GIT)        printf 'runtime directory is not inside a git worktree: %s' "$dir" ;;
-    STALE)          printf 'runtime HEAD does not have %s (minimum required fix) as an ancestor' "$min" ;;
+    STALE)          printf 'runtime HEAD does not have %s (minimum required runtime commit) as an ancestor' "$min" ;;
     DIRTY)          printf 'runtime has local uncommitted changes (git status is not clean): %s' "$dir" ;;
     OK)             printf 'runtime OK' ;;
     *)              printf 'unknown runtime status: %s' "$token" ;;
@@ -343,22 +364,30 @@ speco_runtime_check_message() {
 
 # speco_config_check DIR - validates the CONFIG directory independently of
 # the runtime directory: it must exist and contain both
-# .env.speco.local AND speco.local.json (the mapping file is just as
-# required as the env file — a config dir with only one of the two would
-# otherwise pass validation here and only fail later, deep inside the
-# Python process, after the watcher already thinks it started). Never
-# reads or prints file contents. Prints exactly one status token; returns
-# 0 only for CONFIG_OK.
+# .env.speco.local AND speco.local.json AS REGULAR FILES (-f, not just -e —
+# a directory or a broken symlink with that name must not pass; a symlink
+# that resolves to a real regular file is fine, -f follows it). The mapping
+# file is just as required as the env file — a config dir with only one of
+# the two would otherwise pass validation here and only fail later, deep
+# inside the Python process, after the watcher already thinks it started.
+# Never reads or prints file contents. Prints exactly one status token;
+# returns 0 only for CONFIG_OK.
 speco_config_check() {
   local dir="$1"
 
-  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+  if [ -z "$dir" ]; then
     printf 'CONFIG_NOT_FOUND'; return 1
   fi
-  if [ ! -e "$dir/.env.speco.local" ]; then
+  if ! _is_absolute_path "$dir"; then
+    printf 'CONFIG_NOT_ABSOLUTE'; return 1
+  fi
+  if [ ! -d "$dir" ]; then
+    printf 'CONFIG_NOT_FOUND'; return 1
+  fi
+  if [ ! -f "$dir/.env.speco.local" ]; then
     printf 'MISSING_ENV'; return 1
   fi
-  if [ ! -e "$dir/speco.local.json" ]; then
+  if [ ! -f "$dir/speco.local.json" ]; then
     printf 'MISSING_MAP'; return 1
   fi
   printf 'CONFIG_OK'; return 0
@@ -369,10 +398,11 @@ speco_config_check() {
 speco_config_check_message() {
   local token="$1" dir="$2"
   case "$token" in
-    CONFIG_NOT_FOUND) printf 'config directory does not exist: %s' "$dir" ;;
-    MISSING_ENV)      printf '.env.speco.local not found in: %s' "$dir" ;;
-    MISSING_MAP)      printf 'speco.local.json not found in: %s' "$dir" ;;
-    CONFIG_OK)        printf 'config OK' ;;
+    CONFIG_NOT_FOUND)    printf 'config directory does not exist: %s' "$dir" ;;
+    CONFIG_NOT_ABSOLUTE) printf 'config directory must be an absolute path, got: %s' "$dir" ;;
+    MISSING_ENV)         printf '.env.speco.local not found (or is not a regular file) in: %s' "$dir" ;;
+    MISSING_MAP)         printf 'speco.local.json not found (or is not a regular file) in: %s' "$dir" ;;
+    CONFIG_OK)           printf 'config OK' ;;
     *)                printf 'unknown config status: %s' "$token" ;;
   esac
 }

@@ -84,6 +84,15 @@ cleanup() {
   if [ -n "$RUNTIME_ENV_BACKUP" ]; then
     mv "$RUNTIME_ENV_BACKUP" "$RUNTIME_ENV_FILE"
   fi
+  # Safety net: remove any worktrees this suite registered under the
+  # sandbox (see the real-commit ancestry tests below), in case an
+  # earlier explicit `git worktree remove` didn't run (e.g. the suite was
+  # interrupted). Never touches a worktree outside $SANDBOX.
+  git worktree list --porcelain 2>/dev/null \
+    | awk -v s="$SANDBOX" '$1=="worktree" && index($2,s)==1 {print $2}' \
+    | while IFS= read -r wt; do
+        git worktree remove --force "$wt" >/dev/null 2>&1 || true
+      done
   rm -rf "$SANDBOX"
 }
 trap cleanup EXIT
@@ -122,6 +131,19 @@ rm -f "$RUNTIME_ENV_FILE"
 check="$(speco_runtime_check "$SANDBOX/does-not-exist")"
 assert_eq "A4. missing directory -> NOT_FOUND" "NOT_FOUND" "$check"
 
+# --- A4b. runtime dir must be an absolute path ------------------------------
+# A relative path's meaning would depend on the lab manager's cwd at the
+# moment lab:start runs — exactly the kind of implicit resolution this
+# design exists to eliminate. Applies regardless of source (env var or
+# runtime.env), since the check lives in speco_runtime_check itself.
+check="$(speco_runtime_check "relative/apps/gateway")"
+assert_eq "A4b. relative runtime path -> NOT_ABSOLUTE" "NOT_ABSOLUTE" "$check"
+check="$(speco_runtime_check "./apps/gateway")"
+assert_eq "A4b. dot-relative runtime path -> NOT_ABSOLUTE" "NOT_ABSOLUTE" "$check"
+check="$(speco_runtime_check "$SANDBOX/does-not-exist")"
+assert_eq "A4b. an absolute (but nonexistent) runtime path proceeds past the absolute-path check to NOT_FOUND, not NOT_ABSOLUTE" \
+  "NOT_FOUND" "$check"
+
 # --- A5. speco_n8nrl.py missing -> MISSING_FILE ----------------------------
 mkdir -p "$SANDBOX/no-script"
 check="$(speco_runtime_check "$SANDBOX/no-script")"
@@ -155,6 +177,37 @@ commit_head="$(git -C "$REPO" rev-parse HEAD)"
 check="$(speco_runtime_check "$REPO" "$commit_fix")"
 assert_eq "A6. code-only runtime (no .env/.json inside it) still passes -> OK" "OK" "$check"
 
+# --- A6b. ancestry against the REAL, default SPECO_MIN_RUNTIME_COMMIT,
+# using actual worktrees of THIS repository checked out at the real
+# commits (no synthetic history): 2ff1239 has the stale-heartbeat fix but
+# predates the full runtime/config contract this lab manager depends on
+# (PSOP_SPECO_CONFIG_DIR support); 0edb85a introduces that contract. This
+# exercises the real default constant end-to-end, not just the mechanism.
+REAL_HEARTBEAT_FIX_ONLY="2ff1239292461bba2bde2c5af7a248cbda275d05"
+REAL_FULL_CONTRACT="0edb85a719469ea055c4d7e099c910ed9bf6eb32"
+REAL_STALE_DIR="$SANDBOX/real-heartbeat-fix-only"
+REAL_OK_DIR="$SANDBOX/real-full-contract"
+
+if git worktree add --detach -q "$REAL_STALE_DIR" "$REAL_HEARTBEAT_FIX_ONLY" >/dev/null 2>&1; then
+  check="$(speco_runtime_check "$REAL_STALE_DIR/apps/gateway")"
+  assert_eq "A6b. real 2ff1239 (heartbeat fix only, no config contract) -> STALE against the real default SPECO_MIN_RUNTIME_COMMIT" \
+    "STALE" "$check"
+  git worktree remove --force "$REAL_STALE_DIR" >/dev/null 2>&1
+else
+  printf 'FAIL - A6b. could not create a detached worktree at the real 2ff1239 (is it reachable locally?)\n'
+  FAIL=$((FAIL + 1))
+fi
+
+if git worktree add --detach -q "$REAL_OK_DIR" "$REAL_FULL_CONTRACT" >/dev/null 2>&1; then
+  check="$(speco_runtime_check "$REAL_OK_DIR/apps/gateway")"
+  assert_eq "A6b. real 0edb85a (full runtime/config contract) -> OK against the real default SPECO_MIN_RUNTIME_COMMIT" \
+    "OK" "$check"
+  git worktree remove --force "$REAL_OK_DIR" >/dev/null 2>&1
+else
+  printf 'FAIL - A6b. could not create a detached worktree at the real 0edb85a (is it reachable locally?)\n'
+  FAIL=$((FAIL + 1))
+fi
+
 # --- A7. HEAD predating the min commit -> STALE ---------------------------
 git -C "$REPO" checkout -q "$commit_base"
 check="$(speco_runtime_check "$REPO" "$commit_fix")"
@@ -176,10 +229,10 @@ head="$(speco_runtime_head "$REPO")"
 assert_eq "A10. speco_runtime_head reads the real HEAD" "$commit_head" "$head"
 msg="$(speco_runtime_check_message OK "$REPO" "$commit_fix")"
 assert_eq "A10. OK message is stable/expected" "runtime OK" "$msg"
-assert_true "A10. status.sh renders runtime/git HEAD/min fix labels" \
+assert_true "A10. status.sh renders runtime/git HEAD/min runtime labels" \
   grep -q "git HEAD" "$LAB_SCRIPTS_DIR/status.sh"
-assert_true "A10. status.sh renders a min-fix label" \
-  grep -q "min fix" "$LAB_SCRIPTS_DIR/status.sh"
+assert_true "A10. status.sh renders a min-runtime-commit label" \
+  grep -q "min runtime" "$LAB_SCRIPTS_DIR/status.sh"
 
 # --- A11. PID/cwd mismatch -> warning ---------------------------------------
 assert_true  "A11. matching cwd is recognized" \
@@ -240,6 +293,45 @@ assert_eq "B4. config dir without speco.local.json -> MISSING_MAP" "MISSING_MAP"
 
 check="$(speco_config_check "$SANDBOX/config-does-not-exist")"
 assert_eq "B5. config dir does not exist -> CONFIG_NOT_FOUND" "CONFIG_NOT_FOUND" "$check"
+
+# --- B5b. config dir must be an absolute path -------------------------------
+check="$(speco_config_check "relative/config/dir")"
+assert_eq "B5b. relative config path -> CONFIG_NOT_ABSOLUTE" "CONFIG_NOT_ABSOLUTE" "$check"
+check="$(speco_config_check "$CONFIG_OK_DIR")"
+assert_eq "B5b. the same kind of check on an absolute, valid config dir still succeeds (not CONFIG_NOT_ABSOLUTE)" \
+  "CONFIG_OK" "$check"
+
+# --- B5c. config files must be REGULAR files (-f), not just "exists" (-e) --
+# A directory, or a broken symlink, with the right name must not pass; a
+# symlink that resolves to a real regular file must still be accepted (-f
+# follows it) — config may legitimately be a symlink to a shared file.
+CONFIG_ENV_IS_DIR="$SANDBOX/config-env-is-dir"
+mkdir -p "$CONFIG_ENV_IS_DIR/.env.speco.local"
+touch "$CONFIG_ENV_IS_DIR/speco.local.json"
+check="$(speco_config_check "$CONFIG_ENV_IS_DIR")"
+assert_eq "B5c. .env.speco.local is a directory -> MISSING_ENV" "MISSING_ENV" "$check"
+
+CONFIG_MAP_IS_DIR="$SANDBOX/config-map-is-dir"
+mkdir -p "$CONFIG_MAP_IS_DIR/speco.local.json"
+touch "$CONFIG_MAP_IS_DIR/.env.speco.local"
+check="$(speco_config_check "$CONFIG_MAP_IS_DIR")"
+assert_eq "B5c. speco.local.json is a directory -> MISSING_MAP" "MISSING_MAP" "$check"
+
+CONFIG_BROKEN_SYMLINK="$SANDBOX/config-broken-symlink"
+mkdir -p "$CONFIG_BROKEN_SYMLINK"
+ln -s "$SANDBOX/this-target-does-not-exist" "$CONFIG_BROKEN_SYMLINK/.env.speco.local"
+touch "$CONFIG_BROKEN_SYMLINK/speco.local.json"
+check="$(speco_config_check "$CONFIG_BROKEN_SYMLINK")"
+assert_eq "B5c. .env.speco.local is a broken symlink -> MISSING_ENV" "MISSING_ENV" "$check"
+
+CONFIG_VALID_SYMLINK="$SANDBOX/config-valid-symlink"
+mkdir -p "$CONFIG_VALID_SYMLINK"
+REAL_ENV_FILE="$SANDBOX/real-env-file-target"
+printf 'PSOP_SPECO_HOST=example.invalid\n' > "$REAL_ENV_FILE"
+ln -s "$REAL_ENV_FILE" "$CONFIG_VALID_SYMLINK/.env.speco.local"
+touch "$CONFIG_VALID_SYMLINK/speco.local.json"
+check="$(speco_config_check "$CONFIG_VALID_SYMLINK")"
+assert_eq "B5c. a symlink resolving to a real regular file -> CONFIG_OK" "CONFIG_OK" "$check"
 
 # --- B6. PSOP_SPECO_CONFIG_DIR env var wins over runtime.env ----------------
 printf 'PSOP_SPECO_CONFIG_DIR=%s/config-from-file\n' "$SANDBOX" > "$RUNTIME_ENV_FILE"

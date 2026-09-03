@@ -74,7 +74,7 @@ if service_running speco; then
     check="$(speco_runtime_check "$effective_dir")"
     detail "git HEAD ${head:-unknown}"
     if [ "$check" = "OK" ]; then
-      detail "min fix  ${SPECO_MIN_FIX_COMMIT:0:7} OK"
+      detail "min runtime ${SPECO_MIN_RUNTIME_COMMIT:0:7} OK"
     else
       detail "${c_red}INVALID RUNTIME: $(speco_runtime_check_message "$check" "$effective_dir")${c_reset}"
     fi

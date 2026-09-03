@@ -200,43 +200,70 @@ missing either file refuses to start Speco. The distinction is only about
 *locating* the directory (config gets a sensible default; runtime code
 never does), not about validating what is found there.
 
+## Absolute paths only
+
+Both `PSOP_SPECO_RUNTIME_DIR` and `PSOP_SPECO_CONFIG_DIR` must be
+**absolute** paths — whether set via environment variable or via
+`runtime.env`. A relative path's meaning would depend on whatever the
+lab manager's current working directory happens to be at the moment
+`lab:start` runs, which is exactly the kind of implicit,
+environment-dependent resolution this whole design exists to eliminate.
+A relative value fails closed immediately (`NOT_ABSOLUTE` for the
+runtime directory, `CONFIG_NOT_ABSOLUTE` for the config directory) —
+before any existence or content check is even attempted.
+
 ## Runtime (code) guard
 
 Before starting Speco, `lab:start` checks that the resolved **runtime**
 directory:
 
-1. exists;
-2. contains `speco_n8nrl.py`;
-3. is inside a valid git worktree;
-4. has the minimum required fix commit as an **ancestor** of its `HEAD`:
+1. is an absolute path (see above);
+2. exists;
+3. contains `speco_n8nrl.py`;
+4. is inside a valid git worktree;
+5. has the minimum required runtime commit as an **ancestor** of its
+   `HEAD`:
 
    ```sh
    git -C "$SPECO_RUNTIME_DIR" merge-base --is-ancestor \
-     2ff1239292461bba2bde2c5af7a248cbda275d05 \
+     "$SPECO_MIN_RUNTIME_COMMIT" \
      HEAD
    ```
 
-5. is **not dirty** (`git status --porcelain` is empty — see below).
+6. is **not dirty** (`git status --porcelain` is empty — see below).
 
 This check is about **code only** — it does not look at
 `.env.speco.local` or `speco.local.json` at all, and a runtime directory
 does not need to contain (or link to) either file to pass it. Any
 failure is fail-closed: Speco does not start, and the specific reason is
-printed (`NOT_FOUND`, `MISSING_FILE`, `NOT_GIT`, `STALE`, `DIRTY`), never
-a silent fallback.
+printed (`NOT_ABSOLUTE`, `NOT_FOUND`, `MISSING_FILE`, `NOT_GIT`, `STALE`,
+`DIRTY`), never a silent fallback.
+
+**What `SPECO_MIN_RUNTIME_COMMIT` actually has to be an ancestor of the
+whole runtime *contract*, not just one fix.** It is *not* simply the
+stale-heartbeat fix commit — it is the commit that introduced this lab
+manager's full runtime/config contract, i.e. the commit where
+`speco_n8nrl.py` itself gained `PSOP_SPECO_CONFIG_DIR` support. A runtime
+directory whose `HEAD` only descends from the heartbeat fix but predates
+that contract commit would start, accept `PSOP_SPECO_CONFIG_DIR` on its
+command line, and then silently ignore it — reading config from next to
+the script instead, exactly the bug this whole config-separation design
+fixed. The guard therefore targets the contract commit, not the older
+fix alone.
 
 **Why ancestry, not an exact commit or a version string or a function
-grep:** `main` keeps advancing past the fix commit, and every one of
-those later commits is still safe to run. An exact-SHA check would need
-manual updates forever and reject perfectly good newer code. A `VERSION`
+grep:** `main` keeps advancing past that commit, and every one of those
+later commits is still safe to run. An exact-SHA check would need manual
+updates forever and reject perfectly good newer code. A `VERSION`
 literal or a `grep` for a function name is easy to defeat by accident (a
 harmless rename breaks the grep; a copy-pasted string satisfies it
-without the real fix). `merge-base --is-ancestor` answers the actual
-question — "does this checkout descend from the commit that fixed the
-bug?" — and keeps answering it correctly for every future commit that
-descends from that fix, with no maintenance required until a *new*,
-unrelated minimum commit needs to be established (a deliberate, rare
-edit to `SPECO_MIN_FIX_COMMIT` in `scripts/lab/lib.sh`).
+without the real contract). `merge-base --is-ancestor` answers the
+actual question — "does this checkout descend from the commit that
+introduced the contract this lab manager depends on?" — and keeps
+answering it correctly for every future commit that descends from it,
+with no maintenance required until a *new*, unrelated minimum commit
+needs to be established (a deliberate, rare edit to
+`SPECO_MIN_RUNTIME_COMMIT` in `scripts/lab/lib.sh`).
 
 ## Dirty-runtime guard
 
@@ -253,17 +280,27 @@ local changes.
 Independently of the runtime check, `lab:start` checks that the resolved
 **config** directory:
 
-1. exists;
-2. contains `.env.speco.local`;
-3. contains `speco.local.json`.
+1. is an absolute path (see above);
+2. exists;
+3. contains `.env.speco.local` as a **regular file**;
+4. contains `speco.local.json` as a **regular file**.
+
+"Regular file" (`test -f`, not `test -e`) is deliberate: a directory or a
+broken symlink with the right name must not pass, only for
+`speco_n8nrl.py` to fail later trying to actually read it. A symlink
+that *resolves* to a real regular file is fine — `-f` follows it — so
+pointing `.env.speco.local` at a shared config file elsewhere is still a
+supported way to avoid duplicating secrets, it just isn't *required*
+the way it used to be (see "Two independent directories" above).
 
 Both files are required — a config directory with only one of the two
 fails closed (`MISSING_ENV` or `MISSING_MAP`) rather than letting Speco
 start and fail later, deep inside the Python process, once it actually
 tries to read the missing file. An absent directory reports
-`CONFIG_NOT_FOUND`. All three failure modes are fail-closed, same as the
-runtime guard. Neither file's *contents* are ever read or printed by this
-check — only their presence is verified.
+`CONFIG_NOT_FOUND`, a relative path reports `CONFIG_NOT_ABSOLUTE`. All
+failure modes are fail-closed, same as the runtime guard. Neither file's
+*contents* are ever read or printed by this check — only their presence
+(and regular-file-ness) is verified.
 
 ## `PSOP_SPECO_RUNTIME_DIR` vs. `PSOP_SPECO_CONFIG_DIR`
 
@@ -302,7 +339,7 @@ Speco          RUNNING
   pid 70582 — speco_n8nrl.py --watch
   runtime  <runtime-dir>/apps/gateway
   git HEAD abc1234...
-  min fix  2ff1239 OK
+  min runtime 0edb85a OK
   config   <config-dir>/apps/gateway
   config   OK
 ```
@@ -312,11 +349,11 @@ Speco          RUNNING
 - If the live cwd disagrees with what was recorded when `lab:start`
   launched it (e.g. someone restarted it by hand outside the lab
   manager), a `WARNING` line is shown.
-- `git HEAD` and `min fix` are recomputed live from that directory, every
-  time `lab:status` runs — so a runtime directory that becomes stale or
-  dirty *after* the watcher was started is still reported accurately,
-  not masked by stale metadata. If the minimum-commit guard would now
-  fail, status prints `INVALID RUNTIME` with the reason.
+- `git HEAD` and `min runtime` are recomputed live from that directory,
+  every time `lab:status` runs — so a runtime directory that becomes
+  stale or dirty *after* the watcher was started is still reported
+  accurately, not masked by stale metadata. If the minimum-commit guard
+  would now fail, status prints `INVALID RUNTIME` with the reason.
 - `config` shows the resolved config directory's path and a fresh
   `speco_config_check` result — `INVALID CONFIG` with the reason if it
   would now fail. Never file contents, never the ingestion key, never the
