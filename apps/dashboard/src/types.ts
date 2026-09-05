@@ -81,6 +81,7 @@ export interface FleetDevice {
     protocol: string | null;
     resolution: string | null;
     frameRate: number | null;
+    details: Record<string, unknown> | null;
   } | null;
 }
 

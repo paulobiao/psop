@@ -1,5 +1,8 @@
 node_modules/
 dist/
+
+# PSOP local lab runtime (PIDs + logs) — never committed
+.psop-lab/
 .env
 .env.*
 !.env.example
@@ -31,3 +34,24 @@ apps/gateway/state/
 # Speco NVR local credentials/mapping
 apps/gateway/.env.speco.local
 apps/gateway/speco.local.json
+
+# Terraform local state and working directory
+
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan*
+crash.log*
+crash.*.log
+*.tfvars
+*.tfvars.json*
+!*.tfvars.example
+
+# Development backups and generated browser artifacts
+.playwright-cli/
+output/playwright/
+apps/dashboard-backup-*/
+*.backup-*
+apps/dashboard/public/psop-login-bgold.png
+apps/dashboard/src/assets/psop-logool.png
+apps/dashboard/src/assets/psop-logoold.png

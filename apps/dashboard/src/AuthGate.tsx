@@ -3,6 +3,7 @@ import {
   KeyRound,
   LoaderCircle,
   LockKeyhole,
+  LockKeyholeOpen,
   LogIn,
   LogOut,
   Mail,
@@ -69,6 +70,8 @@ export default function AuthGate({
   const [loggingOut, setLoggingOut] =
     useState(false);
 
+  const [loginPanelOpen, setLoginPanelOpen] =
+    useState(false);
 
   const [
     securitySettingsOpen,
@@ -331,6 +334,7 @@ export default function AuthGate({
 
   function resetAuthenticationFlow() {
     setStage('LOGIN');
+    setLoginPanelOpen(false);
     setChallengeToken('');
     setPendingUserName('');
     setNewPassword('');
@@ -355,9 +359,50 @@ export default function AuthGate({
   }
 
   if (!user) {
+    const authPanelVisible =
+      loginPanelOpen || stage !== 'LOGIN';
+
     return (
-      <main className="auth-page">
-        <section className="auth-card">
+      <main
+        className={`auth-page ${
+          authPanelVisible
+            ? 'auth-page--open'
+            : ''
+        }`}
+      >
+        <div className="auth-scene" aria-hidden="true" />
+
+        {/* ONE lock control — the handle for the sliding divider.
+            It stays mounted, keeps the same icon, and rides the CSS
+            `right` transition in lock-step with the scene width and
+            the panel: viewport right edge when closed, on the
+            scene / panel divider when open. */}
+     <button
+  type="button"
+  className="auth-lock"
+  aria-label={
+    authPanelVisible
+      ? 'Close secure access'
+      : 'Open secure access'
+  }
+  aria-expanded={authPanelVisible}
+  onClick={() => {
+    if (!authPanelVisible) {
+      setLoginPanelOpen(true);
+    } else if (stage === 'LOGIN') {
+      setLoginPanelOpen(false);
+    }
+  }}
+>
+  {authPanelVisible ? (
+    <LockKeyholeOpen size={22} />
+  ) : (
+    <LockKeyhole size={22} />
+  )}
+        </button>
+
+        <aside className="auth-card">
+          <div className="auth-card-inner">
           <div className="auth-brand">
             <ShieldCheck size={28} />
 
@@ -662,7 +707,8 @@ export default function AuthGate({
               Return to sign in
             </button>
           )}
-        </section>
+          </div>
+        </aside>
       </main>
     );
   }

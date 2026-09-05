@@ -1,0 +1,10 @@
+aws_region  = "us-east-1"
+environment = "pilot"
+
+# Remains false until:
+# - ECR image is pushed
+# - JWT/MFA secrets have values
+# - database migration execution is ready
+create_api_service = false
+
+api_image_tag = "bootstrap"
