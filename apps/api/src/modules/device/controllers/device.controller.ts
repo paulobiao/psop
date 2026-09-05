@@ -14,11 +14,13 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { DeviceAvailabilityQueryDto } from '../dto/device-availability-query.dto.js';
+import { DeviceEvidenceQueryDto } from '../dto/device-evidence-query.dto.js';
 import { SetDemoTelemetryStateDto } from '../dto/set-demo-telemetry-state.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { DeviceAvailabilityService } from '../services/device-availability.service.js';
 import { DeviceConnectivityEventsService } from '../services/device-connectivity-events.service';
 import { DeviceIntelligenceService } from '../services/device-intelligence.service.js';
+import { DeviceEvidenceService } from '../services/device-evidence.service.js';
 import { DeviceTelemetryService } from '../services/device-telemetry.service';
 import { DeviceTelemetryIngestionService } from '../services/device-telemetry-ingestion.service.js';
 import { TelemetryDemoService } from '../services/telemetry-demo.service';
@@ -37,6 +39,7 @@ export class DeviceController {
     private readonly telemetryIngestionService: DeviceTelemetryIngestionService,
     private readonly deviceIntelligenceService: DeviceIntelligenceService,
     private readonly deviceAvailabilityService: DeviceAvailabilityService,
+    private readonly deviceEvidenceService: DeviceEvidenceService,
   ) {}
 
   @Get()
@@ -131,6 +134,19 @@ export class DeviceController {
     return this.deviceIntelligenceService.getIntelligence(
       id,
       user.organizationId,
+    );
+  }
+
+  @Get(':id/evidence')
+  findEvidence(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: DeviceEvidenceQueryDto,
+  ) {
+    return this.deviceEvidenceService.findByDeviceId(
+      id,
+      user.organizationId,
+      query.limit,
     );
   }
 

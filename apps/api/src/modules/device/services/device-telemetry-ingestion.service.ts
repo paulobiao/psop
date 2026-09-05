@@ -15,6 +15,7 @@ import {
   verifyDeviceIngestionKey,
 } from '../security/device-ingestion-key.js';
 import { DeviceConnectivityEventsService } from './device-connectivity-events.service.js';
+import { DeviceEvidenceService } from './device-evidence.service.js';
 import { EdgeAgentRuntimeService } from './edge-agent-runtime.service.js';
 import { DeviceTelemetryService } from './device-telemetry.service.js';
 import { LocalTelemetryService } from './local-telemetry.service.js';
@@ -30,6 +31,7 @@ export class DeviceTelemetryIngestionService {
     private readonly edgeAgentRuntime: EdgeAgentRuntimeService,
     private readonly telemetry: DeviceTelemetryService,
     private readonly recorderObservations: RecorderObservationService,
+    private readonly evidence: DeviceEvidenceService,
   ) {}
 
   async getKeyStatus(organizationId: string, deviceId: string) {
@@ -168,6 +170,8 @@ export class DeviceTelemetryIngestionService {
 
     await this.localTelemetry.upsertSnapshot(device.id, input);
 
+    await this.evidence.recordDirectTelemetry(device, input);
+
     await this.edgeAgentRuntime.recordSuccessfulDelivery(
       device.id,
       input,
@@ -230,6 +234,12 @@ export class DeviceTelemetryIngestionService {
         input.timestamp,
         input.observations,
       );
+
+    await this.evidence.recordRecorderObservations(
+      recorder.id,
+      input.timestamp,
+      input.observations,
+    );
 
     await this.connectivityEvents.evaluateFleet(
       recorder.site.organizationId,
