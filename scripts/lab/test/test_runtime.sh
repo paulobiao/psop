@@ -100,6 +100,14 @@ trap cleanup EXIT
 unset PSOP_SPECO_RUNTIME_DIR PSOP_SPECO_CONFIG_DIR 2>/dev/null
 
 echo "PSOP lab manager — Speco runtime & config selection tests"
+# Process state must not be presented as recorder reachability.
+assert_eq "dead watcher reports unknown recorder health" \
+  "tracked watcher pid 123 is gone; exit cause unknown (see Speco log); recorder reachability unknown" \
+  "$(pid_alive() { return 1; }; speco_stopped_reason 123)"
+assert_eq "reused pid is not described as gone" \
+  "tracked pid 123 is alive but does not match the Speco watcher; recorder reachability unknown" \
+  "$(pid_alive() { return 0; }; speco_stopped_reason 123)"
+
 echo "--------------------------------------------------"
 
 # ====================================================================

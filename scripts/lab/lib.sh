@@ -110,6 +110,17 @@ service_running() {
   pid_is_ours "$pid" "$1"
 }
 
+# Only process evidence; API/recorder health cannot be inferred from a PID.
+speco_stopped_reason() {
+  local pid="$1"
+  if pid_alive "$pid"; then
+    printf 'tracked pid %s is alive but does not match the Speco watcher' "$pid"
+  else
+    printf 'tracked watcher pid %s is gone; exit cause unknown (see Speco log)' "$pid"
+  fi
+  printf '; recorder reachability unknown'
+}
+
 # spawn SERVICE -- CMD...   (extra env is inherited from the caller)
 # Launches CMD in a new session, appending stdout+stderr to the service log,
 # and records the session-leader PID.

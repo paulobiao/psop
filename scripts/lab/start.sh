@@ -139,6 +139,9 @@ fi
 
 # --- 6. Speco NVR watcher -------------------------------------------
 #
+# API delivery retries belong to the watch loop in the selected runtime.
+# This launcher does not supervise or restart the process after it exits.
+#
 # Speco is the one lab service with an explicit, fail-closed runtime
 # selection (docs/LAB_RUNTIME.md): it never falls back to "whatever is
 # checked out in this worktree" — that exact behavior previously produced
