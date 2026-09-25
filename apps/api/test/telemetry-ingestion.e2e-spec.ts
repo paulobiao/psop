@@ -1321,6 +1321,78 @@ describe('PSOP local telemetry ingestion', () => {
     },
   );
 
+  it('ingests distinct stream evidence idempotently with tenant isolation and no heartbeat effects', async () => {
+    const before = await prisma.evidenceRecord.count({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+    });
+    const observedAt = new Date(Date.now() - 180000);
+    const payload = {
+      deviceId: recorderChildDeviceId,
+      probeId: randomUUID(),
+      sourceEventKey: randomUUID(),
+      level: 'E6_FRAMES_RECEIVED',
+      result: 'SUCCEEDED',
+      source: 'ADAPTER',
+      reason: 'NONE',
+      observedAt: observedAt.toISOString(),
+      expiresAt: new Date(observedAt.getTime() + 120000).toISOString(),
+      endpoint: {
+        protocol: 'rtsp',
+        host: '192.0.2.1',
+        port: 554,
+        pathSha256: 'a'.repeat(64),
+        profileSha256: 'b'.repeat(64),
+        discoveryMethod: 'ONVIF_GET_STREAM_URI',
+      },
+      negotiation: {
+        describeStatus: 200,
+        setupStatus: 200,
+        playStatus: 200,
+        videoTrackSelected: true,
+        sessionEstablished: true,
+        transport: 'RTP_AVP_TCP',
+      },
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 1,
+        windowMs: 1000,
+        lastReceivedAt: observedAt.toISOString(),
+      },
+    };
+    const send = (body: object, key = recorderKey) =>
+      request(app.getHttpServer())
+        .post(`${API}/telemetry/stream-evidence`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', key)
+        .send(body);
+    const snapshotBefore = await prisma.recorderObservationSnapshot.findUnique({
+      where: { deviceId: recorderChildDeviceId },
+    });
+    await send(payload, 'invalid-test-key').expect(401);
+    await send({ ...payload, deviceId: foreignDeviceId }).expect(400);
+    await send({ ...payload, media: { ...payload.media, count: 0 } }).expect(
+      400,
+    );
+    expect((await send(payload).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(payload).expect(201)).body).toEqual({ accepted: 0 });
+    expect(
+      await prisma.evidenceRecord.count({
+        where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      }),
+    ).toBe(before + 1);
+    const record = await prisma.evidenceRecord.findFirstOrThrow({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(record.level).toBe('E6_MEDIA_RECEIVED');
+    expect(record.expiresAt!.getTime()).toBeLessThan(Date.now());
+    expect(
+      await prisma.recorderObservationSnapshot.findUnique({
+        where: { deviceId: recorderChildDeviceId },
+      }),
+    ).toEqual(snapshotBefore);
+  });
+
   it('rejects missing, invalid and cross-device credentials', async () => {
     const payload = telemetryPayload();
 

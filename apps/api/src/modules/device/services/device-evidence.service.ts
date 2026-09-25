@@ -1,3 +1,8 @@
+import type { IngestStreamEvidenceDto } from '../dto/ingest-stream-evidence.dto.js';
+import {
+  STREAM_LEDGER_LEVEL,
+  validateStreamEvidence,
+} from '../domain/stream-evidence.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../../../generated/prisma/client.js';
 import { PrismaService } from '../../../database/prisma.service.js';
@@ -11,6 +16,35 @@ export class DeviceEvidenceService {
     private readonly prisma: PrismaService,
     private readonly devices: DeviceRepository,
   ) {}
+
+  recordStreamEvidence(
+    observerDeviceId: string,
+    input: IngestStreamEvidenceDto,
+  ) {
+    const value = validateStreamEvidence(input);
+    return this.prisma.evidenceRecord.createMany({
+      data: [
+        {
+          deviceId: value.deviceId,
+          observerDeviceId,
+          kind: 'OBSERVATION',
+          source: value.source,
+          confidence: 'OBSERVED',
+          // An unsuccessful attempt is never evidence that the level was attained.
+          level:
+            value.result === 'SUCCEEDED'
+              ? STREAM_LEDGER_LEVEL[value.level]
+              : 'E0_UNKNOWN',
+          subject: 'video.stream',
+          observedAt: new Date(value.observedAt),
+          expiresAt: new Date(value.expiresAt),
+          sourceEventKey: `stream:${observerDeviceId}:${value.probeId}:${value.deviceId}:${value.level}:${value.sourceEventKey}`,
+          payload: this.json(value),
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
 
   recordDirectTelemetry(
     device: { id: string; deviceType: string },

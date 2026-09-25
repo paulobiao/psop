@@ -1,3 +1,4 @@
+import { streamFixture, negotiation } from '../domain/stream-evidence.fixture.js';
 import { NotFoundException } from '@nestjs/common';
 import { DeviceEvidenceService } from './device-evidence.service.js';
 
@@ -139,3 +140,77 @@ describe('DeviceEvidenceService', () => {
     jest.useRealTimers();
   });
 });
+
+ describe('stream evidence persistence', () => {
+   it('scopes idempotency to observer, probe, target and level', async () => {
+     const { service, prisma } = createService();
+     const input = streamFixture();
+     await service.recordStreamEvidence('observer-1', input);
+     await service.recordStreamEvidence('observer-1', input);
+     const first = prisma.evidenceRecord.createMany.mock.calls[0][0];
+     expect(prisma.evidenceRecord.createMany.mock.calls[1][0]).toEqual(first);
+     expect(first.skipDuplicates).toBe(true);
+     expect(first.data[0]).toMatchObject({
+       deviceId: input.deviceId,
+       observerDeviceId: 'observer-1',
+       source: 'ADAPTER',
+       confidence: 'OBSERVED',
+       subject: 'video.stream',
+       level: input.level,
+     });
+     expect(first.data[0].sourceEventKey).toContain(input.probeId);
+   });
+   it('stores unsupported attempts as E0, retaining the requested level', async () => {
+     const { service, prisma } = createService();
+     const input = {
+       ...streamFixture(),
+       level: 'E6_FRAMES_RECEIVED' as const,
+       result: 'UNSUPPORTED' as const,
+       reason: 'CAPABILITY_UNAVAILABLE' as const,
+     };
+     await service.recordStreamEvidence('observer-1', input);
+     expect(
+       prisma.evidenceRecord.createMany.mock.calls[0][0].data[0],
+     ).toMatchObject({
+       level: 'E0_UNKNOWN',
+       payload: { level: 'E6_FRAMES_RECEIVED', result: 'UNSUPPORTED' },
+     });
+   });
+   it('never promotes recorder frameRate to E6', async () => {
+     const { service, prisma } = createService();
+     await service.recordRecorderObservations('recorder-1', 1788537600, [
+       {
+         deviceId: 'camera-1',
+         status: 'online',
+         frameRate: 30,
+         bitrateKbps: 4096,
+         recordingStatus: 'recording',
+       },
+     ]);
+     expect(prisma.evidenceRecord.createMany.mock.calls[0][0].data).toEqual([
+       expect.objectContaining({ level: 'E3_PROFILE_DISCOVERED' }),
+     ]);
+   });
+   it('maps successful E6 to the existing ledger enum and derives stale at read time', async () => {
+     const { service, prisma } = createService();
+     const input = {
+       ...streamFixture(),
+       level: 'E6_FRAMES_RECEIVED' as const,
+       negotiation,
+       media: {
+         measurement: 'RTP_VIDEO_PACKETS' as const,
+         count: 1,
+         windowMs: 1000,
+         lastReceivedAt: streamFixture().observedAt,
+       },
+     };
+     await service.recordStreamEvidence('observer-1', input);
+     const record = prisma.evidenceRecord.createMany.mock.calls[0][0].data[0];
+     expect(record.level).toBe('E6_MEDIA_RECEIVED');
+     prisma.evidenceRecord.findMany.mockResolvedValue([record]);
+     expect(
+       (await service.findByDeviceId(input.deviceId, 'org', 10)).evidence[0]
+         .freshness,
+     ).toBe('STALE');
+   });
+ });

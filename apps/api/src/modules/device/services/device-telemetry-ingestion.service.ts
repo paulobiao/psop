@@ -1,3 +1,5 @@
+import type { IngestStreamEvidenceDto } from '../dto/ingest-stream-evidence.dto.js';
+import { validateStreamEvidence } from '../domain/stream-evidence.js';
 import {
   BadRequestException,
   Injectable,
@@ -180,6 +182,66 @@ export class DeviceTelemetryIngestionService {
     await this.connectivityEvents.evaluateFleet(device.site.organizationId);
 
     return this.telemetry.findByDeviceId(device.id, device.site.organizationId);
+  }
+
+  async ingestStreamEvidence(
+    observerDeviceId: string,
+    deviceKey: string,
+    input: IngestStreamEvidenceDto,
+  ) {
+    this.localTelemetry.assertEnabled();
+    const observer = await this.prisma.device.findFirst({
+      where: {
+        id: observerDeviceId,
+        deletedAt: null,
+        site: { deletedAt: null },
+      },
+      include: { site: true, ingestionCredential: true },
+    });
+    if (
+      !observer ||
+      !['CAMERA', 'RECORDER', 'GATEWAY'].includes(observer.deviceType) ||
+      observer.monitoringMode !== 'DIRECT' ||
+      observer.status !== 'ACTIVE' ||
+      !observer.ingestionCredential ||
+      !verifyDeviceIngestionKey(deviceKey, observer.ingestionCredential.keyHash)
+    ) {
+      throw new UnauthorizedException('Invalid device credentials');
+    }
+    const value = validateStreamEvidence(input);
+    const expectedSource =
+      observer.deviceType === 'RECORDER'
+        ? 'ADAPTER'
+        : observer.deviceType === 'GATEWAY'
+          ? 'GATEWAY'
+          : 'DEVICE';
+    if (value.source !== expectedSource) {
+      throw new BadRequestException(
+        'Stream source does not match authenticated observer',
+      );
+    }
+    // Same-site membership also scopes the target to the authenticated tenant.
+    // Recorders/gateways may attest only for their explicitly assigned cameras.
+    const target = await this.prisma.device.findFirst({
+      where: {
+        id: value.deviceId,
+        siteId: observer.siteId,
+        deletedAt: null,
+        site: { deletedAt: null, organizationId: observer.site.organizationId },
+        status: 'ACTIVE',
+        deviceType: 'CAMERA',
+        ...(observer.deviceType === 'CAMERA'
+          ? { AND: { id: observer.id }, monitoringMode: 'DIRECT' }
+          : { gatewayDeviceId: observer.id, monitoringMode: 'VIA_GATEWAY' }),
+      },
+    });
+    if (!target || target.id !== value.deviceId) {
+      throw new BadRequestException(
+        'Stream target is not authorized for this observer',
+      );
+    }
+    const stored = await this.evidence.recordStreamEvidence(observer.id, value);
+    return { accepted: stored.count };
   }
 
   async ingestRecorderObservations(

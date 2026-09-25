@@ -1,3 +1,4 @@
+import { IngestStreamEvidenceDto } from '../dto/ingest-stream-evidence.dto.js';
 import {
   Body,
   Controller,
@@ -50,6 +51,19 @@ export class TelemetryIngestionController {
       deviceKey,
       input,
     );
+  }
+
+  @Public()
+  @Post('stream-evidence')
+  ingestStreamEvidence(
+    @Headers('x-device-id') observerDeviceId: string | undefined,
+    @Headers('x-device-key') deviceKey: string | undefined,
+    @Body() input: IngestStreamEvidenceDto,
+  ) {
+    if (!observerDeviceId || !isUUID(observerDeviceId) || !deviceKey) {
+      throw new UnauthorizedException('Device credentials required');
+    }
+    return this.ingestion.ingestStreamEvidence(observerDeviceId, deviceKey, input);
   }
 
   @Public()

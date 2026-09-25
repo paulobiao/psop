@@ -55,3 +55,6 @@ apps/dashboard-backup-*/
 apps/dashboard/public/psop-login-bgold.png
 apps/dashboard/src/assets/psop-logool.png
 apps/dashboard/src/assets/psop-logoold.png
+
+# Generated code-graph reports
+graphify-out/

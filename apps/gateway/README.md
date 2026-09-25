@@ -80,3 +80,7 @@ Stop continuous execution with `Control + C`.
 The SQLite buffer remains available during manual execution. If the PSOP API is temporarily unavailable, the latest eligible heartbeat is buffered and delivered after the API returns while the gateway process is still running.
 
 See `docs/GATEWAY_MANUAL_OPERATION.md`.
+
+## Video assurance contracts
+
+The E4–E6 shared contract and URI sanitizer are documented in [Video Assurance Foundation](../../docs/VIDEO_ASSURANCE_FOUNDATION.md). Existing RTSP reachability probes do not establish E5 or E6. Real stream discovery and media collection are not yet implemented.
