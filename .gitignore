@@ -58,3 +58,6 @@ apps/dashboard/src/assets/psop-logoold.png
 
 # Generated code-graph reports
 graphify-out/
+# PSOP local lab manager runtime state (pids, logs, runtime.env, metadata).
+# Machine-local only, never versioned.
+.psop-lab/
