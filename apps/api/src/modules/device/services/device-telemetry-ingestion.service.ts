@@ -240,6 +240,22 @@ export class DeviceTelemetryIngestionService {
         'Stream target is not authorized for this observer',
       );
     }
+    // The recorder's own last channel report must place this camera on the
+    // attested channel; a channel number is never used as a device identity.
+    if (value.endpoint?.access === 'NVR_MEDIATED') {
+      const channel = await this.prisma.recorderObservationSnapshot.findFirst({
+        where: {
+          deviceId: target.id,
+          recorderDeviceId: observer.id,
+          channelNumber: value.endpoint.channelNumber,
+        },
+      });
+      if (!channel) {
+        throw new BadRequestException(
+          'Stream channel does not match the recorder assignment',
+        );
+      }
+    }
     const stored = await this.evidence.recordStreamEvidence(observer.id, value);
     return { accepted: stored.count };
   }

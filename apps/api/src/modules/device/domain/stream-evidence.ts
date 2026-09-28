@@ -58,6 +58,23 @@ export function validateStreamEvidence(
     reject();
   if (value.level !== 'E6_FRAMES_RECEIVED' && value.media) reject();
   if (success && value.level === 'E6_FRAMES_RECEIVED' && !value.media) reject();
+  const endpoint = value.endpoint;
+  if (endpoint) {
+    const manual = endpoint.discoveryMethod === 'MANUAL_OPERATOR_INPUT';
+    if (!manual && !endpoint.profileSha256) reject();
+    // A manually supplied URI was never discovered, so it cannot attest E4.
+    if (manual && value.level === 'E4_STREAM_URI_OBTAINED') reject();
+    // Recorder-mediated access is attested by the recorder adapter, for one
+    // explicit channel, and is only accepted for the operator-supplied path.
+    if (manual !== (endpoint.access === 'NVR_MEDIATED')) reject();
+    if (
+      endpoint.access === 'NVR_MEDIATED' &&
+      (value.source !== 'ADAPTER' ||
+        !endpoint.channelNumber ||
+        !value.attemptId)
+    )
+      reject();
+  }
   if (value.media) {
     const last = Date.parse(value.media.lastReceivedAt);
     if (

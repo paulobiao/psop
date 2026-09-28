@@ -35,10 +35,16 @@ export class StreamEndpointDto {
   @IsIP() host!: string;
   @IsInt() @Min(1) @Max(65535) port!: number;
   @Matches(/^[a-f0-9]{64}$/) pathSha256!: string;
-  @Matches(/^[a-f0-9]{64}$/) profileSha256!: string;
+  // Required for discovered endpoints; a manual URI has no discovered profile.
+  @IsOptional() @Matches(/^[a-f0-9]{64}$/) profileSha256?: string;
   @IsOptional() @IsInt() @Min(1) @Max(65535) channelNumber?: number;
-  @IsIn(['ONVIF_GET_STREAM_URI', 'VENDOR_API']) discoveryMethod!:
-    'ONVIF_GET_STREAM_URI' | 'VENDOR_API';
+  // MANUAL_OPERATOR_INPUT: URI copied by an operator, never discovered (no E4).
+  @IsIn(['ONVIF_GET_STREAM_URI', 'VENDOR_API', 'MANUAL_OPERATOR_INPUT'])
+  discoveryMethod!:
+    'ONVIF_GET_STREAM_URI' | 'VENDOR_API' | 'MANUAL_OPERATOR_INPUT';
+  // NVR_MEDIATED: the recorder served the stream; not a direct camera observation.
+  @IsOptional() @IsIn(['DIRECT', 'NVR_MEDIATED']) access?:
+    'DIRECT' | 'NVR_MEDIATED';
 }
 
 /** E5: matching DESCRIBE 200 with SDP video selection, SETUP 200 establishing
@@ -69,6 +75,8 @@ export class IngestStreamEvidenceDto {
   // UUID identifies the probe installation; authenticated device is its principal.
   @IsUUID() probeId!: string;
   @IsUUID() sourceEventKey!: string;
+  // Groups the per-level rows of one probe run (required for NVR_MEDIATED).
+  @IsOptional() @IsUUID() attemptId?: string;
   @IsIn(STREAM_LEVELS) level!: (typeof STREAM_LEVELS)[number];
   @IsIn(STREAM_RESULTS) result!: (typeof STREAM_RESULTS)[number];
   @IsIn(['ADAPTER', 'GATEWAY', 'DEVICE']) source!:

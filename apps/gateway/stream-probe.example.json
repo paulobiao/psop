@@ -1,0 +1,6 @@
+{
+  "probeId": "22222222-2222-4222-8222-222222222222",
+  "channelId": "channel-1",
+  "onvifDeviceService": "http://192.0.2.10/onvif/device_service",
+  "expectedSerialSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

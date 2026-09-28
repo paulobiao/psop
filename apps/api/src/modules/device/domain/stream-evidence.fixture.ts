@@ -29,3 +29,31 @@ export const negotiation = {
   sessionEstablished: true,
   transport: 'RTP_AVP_TCP',
 } as const;
+/** NVR-mediated run: operator-supplied URI served by the recorder. */
+export function nvrFixture(
+  level: 'E5_RTSP_SESSION_NEGOTIATED' | 'E6_FRAMES_RECEIVED' = 'E6_FRAMES_RECEIVED',
+): IngestStreamEvidenceDto {
+  const { profileSha256: _, ...endpoint } = streamFixture().endpoint!;
+  return {
+    ...streamFixture(),
+    level,
+    attemptId: '44444444-4444-4444-8444-444444444444',
+    endpoint: {
+      ...endpoint,
+      channelNumber: 2,
+      discoveryMethod: 'MANUAL_OPERATOR_INPUT',
+      access: 'NVR_MEDIATED',
+    },
+    negotiation,
+    ...(level === 'E6_FRAMES_RECEIVED'
+      ? {
+          media: {
+            measurement: 'RTP_VIDEO_PACKETS' as const,
+            count: 140,
+            windowMs: 5000,
+            lastReceivedAt: '2026-09-01T11:59:59.900Z',
+          },
+        }
+      : {}),
+  };
+}

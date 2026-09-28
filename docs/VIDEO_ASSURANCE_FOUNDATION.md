@@ -32,7 +32,7 @@ The authenticated observer must be active and directly monitored. Recorder/gatew
 
 For success, endpoint is mandatory. E5/E6 additionally require negotiation, and E6 requires media. All statuses and proof flags are enumerated; numeric ranges, timestamps and a 4096-byte serialized contract limit are enforced. Observation timestamps allow up to 5 minutes of clock skew into the future. Expiry must be after observation and at most 120 seconds later. Historical/buffered observations are accepted without refreshing their expiry.
 
-Endpoint contains only rtsp/rtsps protocol, literal IP host, port, SHA-256 of path and profile identifier, optional numeric channel number and discovery method (ONVIF_GET_STREAM_URI or VENDOR_API). No raw URI is accepted as proof. DNS hostnames are intentionally unsupported in this first contract. The pure helper `apps/gateway/stream_evidence.py:sanitize_discovered_endpoint` drops userinfo, query and fragment and hashes the path/profile, with constant errors that never echo input. Call it only after discovery; it does not discover or validate stream availability itself. Hashes are correlation fingerprints, not encryption; avoid publishing payloads unnecessarily. Never persist raw discovery responses or credential-bearing URLs.
+Endpoint contains only rtsp/rtsps protocol, literal IP host, port, SHA-256 of path and profile identifier, optional numeric channel number and discovery method (ONVIF_GET_STREAM_URI, VENDOR_API or MANUAL_OPERATOR_INPUT; see below). No raw URI is accepted as proof. DNS hostnames are intentionally unsupported in this first contract. The pure helper `apps/gateway/stream_evidence.py:sanitize_discovered_endpoint` drops userinfo, query and fragment and hashes the path/profile, with constant errors that never echo input. Call it only after discovery; it does not discover or validate stream availability itself. Hashes are correlation fingerprints, not encryption; avoid publishing payloads unnecessarily. Never persist raw discovery responses or credential-bearing URLs.
 
 New contract payloads have no free-form diagnostic fields or generic details. Service validation rejects unknown fields; the application's existing HTTP whitelist may strip unknown fields before service validation. Neither path persists those fields. Legacy generic telemetry behavior is unchanged; callers must not send raw stream information through its details field.
 
@@ -45,6 +45,23 @@ The existing ledger enum names are retained:
 Only SUCCEEDED observations use those ledger levels. Other results use E0_UNKNOWN and retain the attempted level in the typed payload, so level queries cannot mistake a failed attempt for attainment. Results remain distinct: UNKNOWN/UNKNOWN, NOT_OBSERVED/NOT_ATTEMPTED, UNSUPPORTED/CAPABILITY_UNAVAILABLE, FAILED with AUTHENTICATION_FAILED, UNREACHABLE, TIMEOUT or PROTOCOL_ERROR. SUCCEEDED requires reason NONE. Failed/nonobserved attempts cannot include positive negotiation/media proof. An absent row means no observation; it does not imply success or failure.
 
 STALE is derived at read time from expiresAt independently of the observed result; it is not a submitted result and does not rewrite history. Idempotency uses the existing database unique sourceEventKey, scoped by observer, probe, target, attempted level and event UUID. Duplicate retries return accepted: 0 and cannot mutate the first observation. A new attempt needs a new event UUID. This endpoint writes only the ledger; it does not refresh heartbeat/runtime, mutate snapshots or evaluate outage incidents.
+
+## NVR-mediated measurements (contract adjustment)
+
+The first real E5/E6 measurements were obtained through the Speco N8NRL itself: the recorder's RTSP service, with a URI copied by the operator from the recorder UI. That does not match the original E5 wording ("for that discovered stream") and must not be forced into it. The contract was adjusted explicitly instead:
+
+- `endpoint.discoveryMethod = MANUAL_OPERATOR_INPUT` means the URI was **not discovered**. Such rows can never be E4 (rejected), and `profileSha256` is omitted because no profile was discovered. Discovered endpoints still require it.
+- `endpoint.access = NVR_MEDIATED` means the recorder served the stream. It is required with MANUAL_OPERATOR_INPUT (and only accepted with it in this version), requires `source = ADAPTER` (a recorder observer), an explicit `channelNumber` and an `attemptId`. It is never a direct camera observation: observerDeviceId is the recorder, the target is the camera it reports on that channel.
+- `attemptId` (UUID) groups the E5 and E6 rows of one probe run. Each row still has its own `sourceEventKey`.
+- Ingestion additionally requires the recorder's own latest channel report (`recorder_observation_snapshots`, written by the Speco adapter from the recorder's channel list) to place the target camera on `endpoint.channelNumber` for this recorder. A channel number is only ever cross-checked; the target identity is always the explicit `deviceId` from `speco.local.json`.
+
+Meaning is unchanged otherwise. E5 = DESCRIBE/SETUP/PLAY 200 in one session through the recorder. E6 = the same plus ≥ 1 video RTP packet for the selected track, reported as `RTP_VIDEO_PACKETS` with count and window; **not decoded frames** (`decodedFrames = NOT_MEASURED`) and never recording or retrieval proof. Rows expire 60 s after observation.
+
+Each run sends exactly two rows: E5 (SUCCEEDED, or FAILED/UNSUPPORTED with reason) and E6 (SUCCEEDED, FAILED, or NOT_OBSERVED/NOT_ATTEMPTED when negotiation failed). Positive proof is only attached to SUCCEEDED rows.
+
+### Read model and UI
+
+`GET /api/v1/devices/:id/stream-measurement` (organization-scoped like the other device routes) projects the latest attempt: `state` is `NO_MEASUREMENT` (no row ever), `SUCCEEDED`, `FAILED` (the first non-succeeded stage decides result/reason) or `EXPIRED` (validity passed; the original result is still shown). It returns provenance (source, observer recorder, access, URI source, channel), negotiation and media outcomes, packet count/window, `observedAt` and `expiresAt`, but no host, hashes or raw payload. The device details panel shows it as a separate "Stream measurement" section for cameras; it does not change connectivity, health, heartbeat or incidents.
 
 ## Verification
 
@@ -67,4 +84,4 @@ python3 apps/gateway/speco_n8nrl.py --diagnose
 python3 apps/gateway/speco_n8nrl.py --once
 ```
 
-These commands verify existing core/E1/E3 behavior only. **There is no real E4–E6 collection command yet.** Once the discovery method, reachable stream access and camera/profile mapping are confirmed, implement an isolated optional Edge Witness collector against this contract, then test successful discovery/negotiation/media, wrong credentials, blocked stream, missing capability and expiry with the real N8NRL/Hikvision setup. Never submit test fixture claims to represent real lab observations.
+These commands verify existing core/E1/E3 behavior only. The real NVR-mediated E5/E6 procedure is in `apps/gateway/STREAM_PROBE.md` ("NVR-mediated check"). For direct discovery, once the discovery method, reachable stream access and camera/profile mapping are confirmed, implement an isolated optional Edge Witness collector against this contract, then test successful discovery/negotiation/media, wrong credentials, blocked stream, missing capability and expiry with the real N8NRL/Hikvision setup. Never submit test fixture claims to represent real lab observations.

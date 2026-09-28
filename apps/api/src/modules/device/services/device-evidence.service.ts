@@ -10,6 +10,16 @@ import type { IngestDeviceTelemetryDto } from '../dto/ingest-device-telemetry.dt
 import type { RecorderObservedDeviceDto } from '../dto/ingest-recorder-observations.dto.js';
 import { DeviceRepository } from '../repositories/device.repository.js';
 
+type StreamPayload = Pick<
+  IngestStreamEvidenceDto,
+  'level' | 'result' | 'reason' | 'attemptId' | 'endpoint' | 'media'
+>;
+const STREAM_ORDER: string[] = [
+  'E4_STREAM_URI_OBTAINED',
+  'E5_RTSP_SESSION_NEGOTIATED',
+  'E6_FRAMES_RECEIVED',
+];
+
 @Injectable()
 export class DeviceEvidenceService {
   constructor(
@@ -154,6 +164,108 @@ export class DeviceEvidenceService {
               ? 'FRESH'
               : 'STALE',
       })),
+    };
+  }
+
+  /**
+   * Latest stream probe attempt for a device, read-only. States keep
+   * "never measured", "expired" and "measurement failed" distinct; none of
+   * them is connectivity status and none is recording proof.
+   */
+  async latestStreamMeasurement(deviceId: string, organizationId: string) {
+    const device = await this.devices.findByIdWithSite(
+      deviceId,
+      organizationId,
+    );
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+    const now = Date.now();
+    const generatedAt = new Date(now).toISOString();
+    const order = [
+      { observedAt: 'desc' as const },
+      { createdAt: 'desc' as const },
+    ];
+    const latest = await this.prisma.evidenceRecord.findFirst({
+      where: { deviceId, subject: 'video.stream' },
+      orderBy: order,
+    });
+    if (!latest) {
+      return {
+        deviceId,
+        generatedAt,
+        state: 'NO_MEASUREMENT',
+        measurement: null,
+      };
+    }
+    const attemptId = (latest.payload as unknown as StreamPayload).attemptId;
+    const records = attemptId
+      ? await this.prisma.evidenceRecord.findMany({
+          where: {
+            deviceId,
+            subject: 'video.stream',
+            observerDeviceId: latest.observerDeviceId,
+            payload: { path: ['attemptId'], equals: attemptId },
+          },
+          orderBy: order,
+          take: 3,
+        })
+      : [latest];
+    const rows = records.map(
+      (record) => record.payload as unknown as StreamPayload,
+    );
+    const stage = (level: string) => {
+      const row = rows.find((item) => item.level === level);
+      return row ? { result: row.result, reason: row.reason } : null;
+    };
+    // The attempt's outcome is its first stage that did not succeed.
+    const outcome =
+      rows
+        .slice()
+        .sort(
+          (a, b) =>
+            STREAM_ORDER.indexOf(a.level) - STREAM_ORDER.indexOf(b.level),
+        )
+        .find(
+          (row) => row.result !== 'SUCCEEDED' && row.result !== 'NOT_OBSERVED',
+        ) ?? rows[0];
+    const media = rows.find((row) => row.media)?.media ?? null;
+    const endpoint = rows.find((row) => row.endpoint)?.endpoint;
+    const expiresAt = Math.max(
+      ...records.map((record) => record.expiresAt?.getTime() ?? 0),
+    );
+    const observer = latest.observerDeviceId
+      ? await this.prisma.device.findFirst({
+          where: { id: latest.observerDeviceId, siteId: device.siteId },
+          select: { id: true, name: true, deviceType: true },
+        })
+      : null;
+    const succeeded = outcome.result === 'SUCCEEDED';
+    return {
+      deviceId,
+      generatedAt,
+      state: expiresAt < now ? 'EXPIRED' : succeeded ? 'SUCCEEDED' : 'FAILED',
+      measurement: {
+        attemptId: attemptId ?? null,
+        observedAt: latest.observedAt.toISOString(),
+        expiresAt: new Date(expiresAt).toISOString(),
+        freshness: expiresAt >= now ? 'FRESH' : 'STALE',
+        source: latest.source,
+        confidence: latest.confidence,
+        observer,
+        access: endpoint?.access ?? null,
+        uriSource: endpoint?.discoveryMethod ?? null,
+        channelNumber: endpoint?.channelNumber ?? null,
+        result: outcome.result,
+        reason: outcome.reason,
+        negotiation: stage('E5_RTSP_SESSION_NEGOTIATED'),
+        media: { ...stage('E6_FRAMES_RECEIVED'), proof: media },
+        // RTP packets are not decoded frames; no recording is implied.
+        decodedFrames:
+          media?.measurement === 'DECODED_VIDEO_FRAMES'
+            ? 'MEASURED'
+            : 'NOT_MEASURED',
+      },
     };
   }
 

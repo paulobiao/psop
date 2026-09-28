@@ -1,5 +1,8 @@
 import { DeviceTelemetryIngestionService } from './device-telemetry-ingestion.service.js';
-import { streamFixture } from '../domain/stream-evidence.fixture.js';
+import {
+  nvrFixture,
+  streamFixture,
+} from '../domain/stream-evidence.fixture.js';
 import { hashDeviceIngestionKey } from '../security/device-ingestion-key.js';
 
 function setup() {
@@ -18,6 +21,9 @@ function setup() {
         .fn()
         .mockResolvedValueOnce(observer)
         .mockResolvedValueOnce({ id: streamFixture().deviceId }),
+    },
+    recorderObservationSnapshot: {
+      findFirst: jest.fn().mockResolvedValue({ deviceId: streamFixture().deviceId }),
     },
   };
   const evidence = {
@@ -119,5 +125,47 @@ describe('authenticated stream ingestion', () => {
       }),
     ).rejects.toThrow('Stream target is not authorized');
     expect(evidence.recordStreamEvidence).not.toHaveBeenCalled();
+  });
+  it('accepts an NVR-mediated run only on the channel the recorder reports', async () => {
+    const { service, prisma, evidence } = setup();
+    await expect(
+      service.ingestStreamEvidence('observer', 'unit-test-key', nvrFixture()),
+    ).resolves.toEqual({ accepted: 1 });
+    expect(
+      prisma.recorderObservationSnapshot.findFirst.mock.calls[0][0].where,
+    ).toEqual({
+      deviceId: streamFixture().deviceId,
+      recorderDeviceId: 'observer',
+      channelNumber: 2,
+    });
+    expect(evidence.recordStreamEvidence).toHaveBeenCalledWith(
+      'observer',
+      nvrFixture(),
+    );
+  });
+  it('rejects an NVR-mediated run bound to the wrong channel without writing', async () => {
+    const { service, prisma, evidence } = setup();
+    prisma.recorderObservationSnapshot.findFirst.mockResolvedValue(null);
+    await expect(
+      service.ingestStreamEvidence('observer', 'unit-test-key', nvrFixture()),
+    ).rejects.toThrow('Stream channel does not match');
+    expect(evidence.recordStreamEvidence).not.toHaveBeenCalled();
+  });
+  it('rejects an NVR-mediated run for a camera of another recorder or tenant', async () => {
+    const { service, prisma, evidence, observer } = setup();
+    prisma.device.findFirst
+      .mockReset()
+      .mockResolvedValueOnce(observer)
+      .mockResolvedValueOnce(null);
+    await expect(
+      service.ingestStreamEvidence('observer', 'unit-test-key', nvrFixture()),
+    ).rejects.toThrow('Stream target is not authorized');
+    expect(prisma.recorderObservationSnapshot.findFirst).not.toHaveBeenCalled();
+    expect(evidence.recordStreamEvidence).not.toHaveBeenCalled();
+  });
+  it('does not consult channel assignment for direct discovered endpoints', async () => {
+    const { service, prisma } = setup();
+    await service.ingestStreamEvidence('observer', 'unit-test-key', streamFixture());
+    expect(prisma.recorderObservationSnapshot.findFirst).not.toHaveBeenCalled();
   });
 });

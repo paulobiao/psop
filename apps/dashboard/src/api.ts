@@ -3,6 +3,7 @@ import type {
   CreateSiteInput,
   DeviceAlert,
   DeviceConnectivityEventsResponse,
+  DeviceStreamMeasurement,
   FleetDevice,
   InventoryDevice,
   OperationsOverview,
@@ -315,6 +316,17 @@ export function getDeviceConnectivityEvents(
 ): Promise<DeviceConnectivityEventsResponse> {
   return requestJson<DeviceConnectivityEventsResponse>(
     `/devices/${deviceId}/connectivity-events`,
+    {},
+    signal,
+  );
+}
+
+export function getDeviceStreamMeasurement(
+  deviceId: string,
+  signal?: AbortSignal,
+): Promise<DeviceStreamMeasurement> {
+  return requestJson<DeviceStreamMeasurement>(
+    `/devices/${deviceId}/stream-measurement`,
     {},
     signal,
   );

@@ -20,6 +20,7 @@ import {
   getOperationsOverview,
   evaluateFleetConnectivity,
   getDeviceConnectivityEvents,
+  getDeviceStreamMeasurement,
   getDeviceTelemetry,
   getTelemetryDemoStatus,
   setDeviceDemoState,
@@ -29,6 +30,7 @@ import type {
   ConnectivityEvent,
   ConnectivityState,
   DeviceAlert,
+  DeviceStreamMeasurement,
   FleetDevice,
   GatewayManagedDevice,
   InventoryDevice,
@@ -119,6 +121,138 @@ function stateLabel(state: ConnectivityState): string {
   };
 
   return labels[state];
+}
+
+const STREAM_STATE: Record<
+  DeviceStreamMeasurement["state"] | "UNAVAILABLE",
+  { label: string; badge: string; note: string }
+> = {
+  NO_MEASUREMENT: {
+    label: "No measurement",
+    badge: "never_seen",
+    note: "No stream probe has reported for this camera.",
+  },
+  SUCCEEDED: {
+    label: "Media observed",
+    badge: "online",
+    note: "Session negotiated and video RTP packets received.",
+  },
+  FAILED: {
+    label: "Measurement failed",
+    badge: "offline",
+    note: "The latest probe attempt did not complete.",
+  },
+  EXPIRED: {
+    label: "Evidence expired",
+    badge: "degraded",
+    note: "The latest result is past its validity; it is not current.",
+  },
+  UNAVAILABLE: {
+    label: "Unavailable",
+    badge: "unknown",
+    note: "Stream measurement could not be loaded.",
+  },
+};
+
+function enumLabel(value: string | null | undefined): string {
+  return value ? value.toLowerCase().replaceAll("_", " ") : "—";
+}
+
+function StreamMeasurementSection({
+  value,
+}: {
+  value: DeviceStreamMeasurement | null;
+}) {
+  const state = STREAM_STATE[value?.state ?? "UNAVAILABLE"];
+  const m = value?.measurement ?? null;
+  const proof = m?.media.proof ?? null;
+
+  return (
+    <section className="details-section">
+      <div className="details-section__heading">
+        <div>
+          <span className="eyebrow">Video assurance · separate from connectivity</span>
+          <h3>Stream measurement</h3>
+        </div>
+        <span className={`badge badge--${state.badge}`}>{state.label}</span>
+      </div>
+
+      <p className="details-section__note">{state.note}</p>
+
+      {m && (
+        <div className="detail-metrics">
+          <DetailMetric
+            label="Result"
+            value={
+              m.result === "SUCCEEDED"
+                ? "Succeeded"
+                : `${enumLabel(m.result)} · ${enumLabel(m.reason)}`
+            }
+            icon={<Activity size={19} />}
+          />
+          <DetailMetric
+            label="Negotiation (DESCRIBE/SETUP/PLAY)"
+            value={
+              m.negotiation
+                ? `${enumLabel(m.negotiation.result)}${m.negotiation.reason === "NONE" ? "" : ` · ${enumLabel(m.negotiation.reason)}`}`
+                : "Not reported"
+            }
+            icon={<Network size={19} />}
+          />
+          <DetailMetric
+            label={
+              proof?.measurement === "DECODED_VIDEO_FRAMES"
+                ? "Decoded video frames"
+                : "Video RTP packets (not decoded frames)"
+            }
+            value={
+              proof
+                ? `${proof.count.toLocaleString()} in ${(proof.windowMs / 1000).toFixed(1)} s`
+                : m.media.result
+                  ? `${enumLabel(m.media.result)} · ${enumLabel(m.media.reason)}`
+                  : "Not reported"
+            }
+            icon={<Camera size={19} />}
+          />
+          <DetailMetric
+            label="Origin"
+            value={
+              m.access === "NVR_MEDIATED"
+                ? `Via recorder ${m.observer?.name ?? ""}${m.channelNumber ? ` · channel ${m.channelNumber}` : ""}`.trim()
+                : `${enumLabel(m.source)}${m.observer ? ` · ${m.observer.name}` : ""}`
+            }
+            icon={<HardDrive size={19} />}
+          />
+          <DetailMetric
+            label="URI source"
+            value={
+              m.uriSource === "MANUAL_OPERATOR_INPUT"
+                ? "Operator-supplied (no discovery)"
+                : enumLabel(m.uriSource)
+            }
+            icon={<Database size={19} />}
+          />
+          <DetailMetric
+            label="Measured"
+            value={formatDate(m.observedAt)}
+            icon={<Clock3 size={19} />}
+          />
+          <DetailMetric
+            label={m.freshness === "FRESH" ? "Valid until" : "Expired at"}
+            value={formatDate(m.expiresAt)}
+            icon={<Clock3 size={19} />}
+          />
+        </div>
+      )}
+
+      {m && (
+        <small className="details-section__note">
+          Probe attestation ({enumLabel(m.confidence)}). Does not prove
+          decoded images, recording or retrieval.
+        </small>
+      )}
+    </section>
+  );
 }
 
 function DetailMetric({
@@ -235,6 +369,8 @@ export default function DeviceDetailsPanel({
   ] = useState<GatewayManagedDevice | null>(
     null,
   );
+  const [streamMeasurement, setStreamMeasurement] =
+    useState<DeviceStreamMeasurement | null>(null);
   const [events, setEvents] = useState<ConnectivityEvent[]>([]);
   const [alerts, setAlerts] = useState<DeviceAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -266,6 +402,7 @@ export default function DeviceDetailsPanel({
         setDerivedGatewayStatus(null);
         setEvents([]);
         setAlerts([]);
+        setStreamMeasurement(null);
         setDemoEnabled(false);
 
         const supportsTelemetry =
@@ -293,6 +430,7 @@ export default function DeviceDetailsPanel({
             alertsResult,
             demoStatus,
             overviewResult,
+            streamResult,
           ] = await Promise.all([
             getDeviceTelemetry(
               deviceId,
@@ -312,7 +450,16 @@ export default function DeviceDetailsPanel({
             getOperationsOverview(
               controller.signal,
             ),
+            // Optional evidence: its failure must not hide the device panel.
+            deviceResult.deviceType === "CAMERA"
+              ? getDeviceStreamMeasurement(
+                  deviceId,
+                  controller.signal,
+                ).catch(() => null)
+              : Promise.resolve(null),
           ]);
+
+          setStreamMeasurement(streamResult);
 
           setTelemetry(telemetryResult);
           setDemoEnabled(demoStatus.enabled);
@@ -631,6 +778,11 @@ export default function DeviceDetailsPanel({
               </span>
             </section>
             )}
+
+            {telemetry &&
+              inventoryDevice.deviceType === "CAMERA" && (
+                <StreamMeasurementSection value={streamMeasurement} />
+              )}
 
             {telemetry && (
             <section className="details-section">

@@ -1,6 +1,10 @@
 import { validateStreamEvidence } from './stream-evidence.js';
 
-import { streamFixture, negotiation } from './stream-evidence.fixture.js';
+import {
+  nvrFixture,
+  streamFixture,
+  negotiation,
+} from './stream-evidence.fixture.js';
 
 describe('stream evidence contract', () => {
   it.each([
@@ -113,5 +117,58 @@ describe('stream evidence contract', () => {
         },
       }),
     ).toThrow();
+  });
+  describe('NVR-mediated manual URI', () => {
+    const endpoint = nvrFixture().endpoint!;
+    it.each(['E5_RTSP_SESSION_NEGOTIATED', 'E6_FRAMES_RECEIVED'] as const)(
+      'accepts %s through the recorder without a discovered profile',
+      (level) => {
+        expect(validateStreamEvidence(nvrFixture(level)).endpoint).toEqual(
+          nvrFixture(level).endpoint,
+        );
+      },
+    );
+    it('accepts failed and not-attempted rows carrying provenance', () => {
+      const { negotiation: _n, media: _m, ...failed } = nvrFixture();
+      expect(
+        validateStreamEvidence({
+          ...failed,
+          level: 'E5_RTSP_SESSION_NEGOTIATED',
+          result: 'FAILED',
+          reason: 'AUTHENTICATION_FAILED',
+        }).result,
+      ).toBe('FAILED');
+      expect(
+        validateStreamEvidence({
+          ...failed,
+          result: 'NOT_OBSERVED',
+          reason: 'NOT_ATTEMPTED',
+        }).result,
+      ).toBe('NOT_OBSERVED');
+    });
+    it.each([
+      // A manual URI was never discovered: no E4.
+      { level: 'E4_STREAM_URI_OBTAINED', negotiation: undefined, media: undefined },
+      // Provenance cannot be dropped or claimed directly by the camera/gateway.
+      { endpoint: { ...endpoint, access: undefined } },
+      { endpoint: { ...endpoint, access: 'DIRECT' } },
+      { source: 'DEVICE' },
+      { source: 'GATEWAY' },
+      { endpoint: { ...endpoint, channelNumber: undefined } },
+      { attemptId: undefined },
+      { attemptId: 'not-a-uuid' },
+      // NVR access is only accepted for the operator-supplied path.
+      { endpoint: { ...endpoint, discoveryMethod: 'VENDOR_API' } },
+      { endpoint: { ...endpoint, uri: 'rtsp://user:secret@192.0.2.1/ch2' } },
+    ])('rejects %#', (patch) => {
+      expect(() =>
+        validateStreamEvidence({ ...nvrFixture(), ...patch } as never),
+      ).toThrow('Invalid stream evidence');
+    });
+    it('still requires a profile for discovered endpoints', () => {
+      const input = streamFixture();
+      delete input.endpoint!.profileSha256;
+      expect(() => validateStreamEvidence(input)).toThrow();
+    });
   });
 });

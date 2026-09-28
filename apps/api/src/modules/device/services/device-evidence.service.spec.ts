@@ -1,4 +1,8 @@
-import { streamFixture, negotiation } from '../domain/stream-evidence.fixture.js';
+import {
+  nvrFixture,
+  streamFixture,
+  negotiation,
+} from '../domain/stream-evidence.fixture.js';
 import { NotFoundException } from '@nestjs/common';
 import { DeviceEvidenceService } from './device-evidence.service.js';
 
@@ -214,3 +218,141 @@ describe('DeviceEvidenceService', () => {
      ).toBe('STALE');
    });
  });
+
+describe('latest stream measurement', () => {
+  const recorder = { id: 'recorder-1', name: 'NVR', deviceType: 'RECORDER' };
+  // Rows exactly as the NVR check emits them for one attempt.
+  function record(payload: Record<string, unknown>, expiresAt: string) {
+    return {
+      observerDeviceId: recorder.id,
+      source: 'ADAPTER',
+      confidence: 'OBSERVED',
+      observedAt: new Date(payload.observedAt as string),
+      expiresAt: new Date(expiresAt),
+      payload,
+    };
+  }
+  function setup(rows: ReturnType<typeof record>[], device: unknown = { id: 'camera-1', siteId: 'site-1' }) {
+    const prisma = {
+      evidenceRecord: {
+        findFirst: jest.fn().mockResolvedValue(rows[0] ?? null),
+        findMany: jest.fn().mockResolvedValue(rows),
+      },
+      device: { findFirst: jest.fn().mockResolvedValue(recorder) },
+    };
+    const devices = { findByIdWithSite: jest.fn().mockResolvedValue(device) };
+    return {
+      service: new DeviceEvidenceService(prisma as never, devices as never),
+      prisma,
+      devices,
+    };
+  }
+  const future = new Date(Date.now() + 60_000).toISOString();
+  const now = new Date().toISOString();
+  const e6 = () => ({ ...nvrFixture(), observedAt: now });
+  const e5 = () => ({ ...nvrFixture('E5_RTSP_SESSION_NEGOTIATED'), observedAt: now });
+  const without = ({ negotiation: _n, media: _m, ...rest }: ReturnType<typeof e6>) => rest;
+
+  it('reports absence of measurement distinctly', async () => {
+    const { service, prisma } = setup([]);
+    await expect(service.latestStreamMeasurement('camera-1', 'tenant')).resolves.toMatchObject({
+      state: 'NO_MEASUREMENT',
+      measurement: null,
+    });
+    expect(prisma.evidenceRecord.findMany).not.toHaveBeenCalled();
+  });
+
+  it('projects a fresh NVR-mediated success with provenance, packets and validity', async () => {
+    const { service, prisma } = setup([
+      record({ ...e6(), media: { ...e6().media, lastReceivedAt: now } }, future),
+      record(e5(), future),
+    ]);
+    const result = await service.latestStreamMeasurement('camera-1', 'tenant');
+    expect(result).toMatchObject({
+      state: 'SUCCEEDED',
+      measurement: {
+        freshness: 'FRESH',
+        expiresAt: future,
+        source: 'ADAPTER',
+        observer: recorder,
+        access: 'NVR_MEDIATED',
+        uriSource: 'MANUAL_OPERATOR_INPUT',
+        channelNumber: 2,
+        result: 'SUCCEEDED',
+        reason: 'NONE',
+        negotiation: { result: 'SUCCEEDED', reason: 'NONE' },
+        media: {
+          result: 'SUCCEEDED',
+          proof: { measurement: 'RTP_VIDEO_PACKETS', count: 140, windowMs: 5000 },
+        },
+        decodedFrames: 'NOT_MEASURED',
+      },
+    });
+    // Rows are grouped by the explicit attempt and the same observer only.
+    expect(prisma.evidenceRecord.findMany.mock.calls[0][0].where).toMatchObject({
+      deviceId: 'camera-1',
+      subject: 'video.stream',
+      observerDeviceId: recorder.id,
+      payload: { path: ['attemptId'], equals: nvrFixture().attemptId },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/host|pathSha256|192\.0\.2/);
+  });
+
+  it('reports authentication failure as a failed measurement, not absence', async () => {
+    const { service } = setup([
+      record({ ...without(e6()), result: 'NOT_OBSERVED', reason: 'NOT_ATTEMPTED' }, future),
+      record({ ...without(e5()), result: 'FAILED', reason: 'AUTHENTICATION_FAILED' }, future),
+    ]);
+    await expect(service.latestStreamMeasurement('camera-1', 'tenant')).resolves.toMatchObject({
+      state: 'FAILED',
+      measurement: {
+        result: 'FAILED',
+        reason: 'AUTHENTICATION_FAILED',
+        negotiation: { result: 'FAILED', reason: 'AUTHENTICATION_FAILED' },
+        media: { result: 'NOT_OBSERVED', reason: 'NOT_ATTEMPTED', proof: null },
+      },
+    });
+  });
+
+  it('reports negotiated session without media as failed media', async () => {
+    const { service } = setup([
+      record({ ...without(e6()), result: 'FAILED', reason: 'TIMEOUT' }, future),
+      record(e5(), future),
+    ]);
+    await expect(service.latestStreamMeasurement('camera-1', 'tenant')).resolves.toMatchObject({
+      state: 'FAILED',
+      measurement: {
+        reason: 'TIMEOUT',
+        negotiation: { result: 'SUCCEEDED' },
+        media: { result: 'FAILED', reason: 'TIMEOUT', proof: null },
+      },
+    });
+  });
+
+  it('marks an old success as expired while keeping its original result', async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const { service } = setup([record(e6(), past), record(e5(), past)]);
+    await expect(service.latestStreamMeasurement('camera-1', 'tenant')).resolves.toMatchObject({
+      state: 'EXPIRED',
+      measurement: { freshness: 'STALE', result: 'SUCCEEDED' },
+    });
+  });
+
+  it('enforces tenant isolation before reading evidence', async () => {
+    const { service, prisma, devices } = setup([record(e6(), future)], null);
+    await expect(service.latestStreamMeasurement('camera-1', 'other-tenant')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(devices.findByIdWithSite).toHaveBeenCalledWith('camera-1', 'other-tenant');
+    expect(prisma.evidenceRecord.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('resolves the observer only within the device site', async () => {
+    const { service, prisma } = setup([record(e6(), future)]);
+    await service.latestStreamMeasurement('camera-1', 'tenant');
+    expect(prisma.device.findFirst.mock.calls[0][0].where).toEqual({
+      id: recorder.id,
+      siteId: 'site-1',
+    });
+  });
+});

@@ -150,6 +150,17 @@ export class DeviceController {
     );
   }
 
+  @Get(':id/stream-measurement')
+  findStreamMeasurement(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.deviceEvidenceService.latestStreamMeasurement(
+      id,
+      user.organizationId,
+    );
+  }
+
   @Get(':id/availability')
   findAvailability(
     @CurrentUser() user: AuthUser,

@@ -1393,6 +1393,124 @@ describe('PSOP local telemetry ingestion', () => {
     ).toEqual(snapshotBefore);
   });
 
+  it('ingests NVR-mediated E5/E6 for the recorder-reported channel and projects the latest attempt', async () => {
+    const read = (deviceId: string) =>
+      request(app.getHttpServer())
+        .get(`${API}/devices/${deviceId}/stream-measurement`)
+        .set(bearer(adminToken));
+    const send = (body: object) =>
+      request(app.getHttpServer())
+        .post(`${API}/telemetry/stream-evidence`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', recorderKey)
+        .send(body);
+    const observedAt = new Date(Date.now() - 1000);
+    const attemptId = randomUUID();
+    const negotiation = {
+      describeStatus: 200,
+      setupStatus: 200,
+      playStatus: 200,
+      videoTrackSelected: true,
+      sessionEstablished: true,
+      transport: 'RTP_AVP_TCP',
+    };
+    // Shape emitted by apps/gateway/nvr_rtsp_check.py --send.
+    const row = (level: string, extra: object = {}) => ({
+      deviceId: recorderChildDeviceId,
+      probeId: randomUUID(),
+      sourceEventKey: randomUUID(),
+      attemptId,
+      level,
+      result: 'SUCCEEDED',
+      source: 'ADAPTER',
+      reason: 'NONE',
+      observedAt: observedAt.toISOString(),
+      expiresAt: new Date(observedAt.getTime() + 60000).toISOString(),
+      endpoint: {
+        protocol: 'rtsp',
+        host: '192.0.2.1',
+        port: 554,
+        pathSha256: 'c'.repeat(64),
+        channelNumber: 2,
+        discoveryMethod: 'MANUAL_OPERATOR_INPUT',
+        access: 'NVR_MEDIATED',
+      },
+      negotiation,
+      ...extra,
+    });
+    const e5 = row('E5_RTSP_SESSION_NEGOTIATED');
+    const e6 = row('E6_FRAMES_RECEIVED', {
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 150,
+        windowMs: 5000,
+        lastReceivedAt: observedAt.toISOString(),
+      },
+    });
+
+    // Wrong channel, foreign tenant target and E4 claims are refused.
+    await send({ ...e6, endpoint: { ...e6.endpoint, channelNumber: 3 } }).expect(400);
+    await send({ ...e6, deviceId: foreignDeviceId }).expect(400);
+    await send({ ...e6, level: 'E4_STREAM_URI_OBTAINED', negotiation: undefined, media: undefined }).expect(400);
+
+    expect((await send(e5).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(e6).expect(201)).body).toEqual({ accepted: 1 });
+
+    const projection = (await read(recorderChildDeviceId).expect(200)).body;
+    expect(projection).toMatchObject({
+      state: 'SUCCEEDED',
+      measurement: {
+        attemptId,
+        freshness: 'FRESH',
+        source: 'ADAPTER',
+        observer: { id: recorderDeviceId, deviceType: 'RECORDER' },
+        access: 'NVR_MEDIATED',
+        uriSource: 'MANUAL_OPERATOR_INPUT',
+        channelNumber: 2,
+        negotiation: { result: 'SUCCEEDED', reason: 'NONE' },
+        media: {
+          result: 'SUCCEEDED',
+          proof: { measurement: 'RTP_VIDEO_PACKETS', count: 150 },
+        },
+        decodedFrames: 'NOT_MEASURED',
+      },
+    });
+    expect(JSON.stringify(projection)).not.toContain('192.0.2.1');
+    const ledger = await prisma.evidenceRecord.findMany({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      orderBy: { observedAt: 'desc' },
+    });
+    expect(ledger.some((r) => r.level === 'E4_STREAM_URI_OBTAINED')).toBe(false);
+
+    // A newer failed attempt replaces the latest measurement, not the history.
+    const failedAttempt = randomUUID();
+    const { negotiation: _n, ...failed } = row('E5_RTSP_SESSION_NEGOTIATED');
+    await send({
+      ...failed,
+      attemptId: failedAttempt,
+      observedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      result: 'FAILED',
+      reason: 'AUTHENTICATION_FAILED',
+    }).expect(201);
+    expect((await read(recorderChildDeviceId).expect(200)).body).toMatchObject({
+      state: 'FAILED',
+      measurement: {
+        attemptId: failedAttempt,
+        reason: 'AUTHENTICATION_FAILED',
+        negotiation: { result: 'FAILED' },
+        media: { proof: null },
+      },
+    });
+
+    // Tenant isolation on read; other devices report absence distinctly.
+    await read(foreignDeviceId).expect(404);
+    expect((await read(localDeviceId).expect(200)).body).toMatchObject({
+      state: 'NO_MEASUREMENT',
+      measurement: null,
+    });
+  });
+
   it('rejects missing, invalid and cross-device credentials', async () => {
     const payload = telemetryPayload();
 

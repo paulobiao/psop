@@ -34,6 +34,7 @@ apps/gateway/state/
 # Speco NVR local credentials/mapping
 apps/gateway/.env.speco.local
 apps/gateway/speco.local.json
+apps/gateway/stream-probe.local.json
 
 # Terraform local state and working directory
 
