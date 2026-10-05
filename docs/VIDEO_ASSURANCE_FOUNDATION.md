@@ -59,9 +59,13 @@ Meaning is unchanged otherwise. E5 = DESCRIBE/SETUP/PLAY 200 in one session thro
 
 Each run sends exactly two rows: E5 (SUCCEEDED, or FAILED/UNSUPPORTED with reason) and E6 (SUCCEEDED, FAILED, or NOT_OBSERVED/NOT_ATTEMPTED when negotiation failed). Positive proof is only attached to SUCCEEDED rows.
 
+### Periodic execution
+
+`apps/gateway/stream_scheduler.py` runs these checks periodically (see `apps/gateway/STREAM_PROBE.md`, "Periodic executor"). Validity stays a per-observation property (`evidenceValiditySeconds`, at most 120 s by contract) and must be `<= intervalSeconds`, so a missed sample becomes visible as expired instead of being bridged. Resends reuse the original row bytes; the unique `sourceEventKey` makes them idempotent and old rows are never renewed. Sampling does not prove continuous availability.
+
 ### Read model and UI
 
-`GET /api/v1/devices/:id/stream-measurement` (organization-scoped like the other device routes) projects the latest attempt: `state` is `NO_MEASUREMENT` (no row ever), `SUCCEEDED`, `FAILED` (the first non-succeeded stage decides result/reason) or `EXPIRED` (validity passed; the original result is still shown). It returns provenance (source, observer recorder, access, URI source, channel), negotiation and media outcomes, packet count/window, `observedAt` and `expiresAt`, but no host, hashes or raw payload. The device details panel shows it as a separate "Stream measurement" section for cameras; it does not change connectivity, health, heartbeat or incidents.
+`GET /api/v1/devices/:id/stream-measurement` (organization-scoped like the other device routes) projects the latest attempt: `state` is `NO_MEASUREMENT` (no row ever), `SUCCEEDED`, `FAILED` (the first non-succeeded stage decides result/reason), `INCOMPLETE` (an NVR-mediated attempt whose E5 or E6 row has not reached the ledger yet, e.g. partial delivery; never shown as success) or `EXPIRED` (validity passed; the original result is still shown, with `complete=false` if it was partial). It returns provenance (source, observer recorder, access, URI source, channel), negotiation and media outcomes, packet count/window, `observedAt` and `expiresAt`, but no host, hashes or raw payload. The device details panel shows it as a separate "Stream measurement" section for cameras; it does not change connectivity, health, heartbeat or incidents.
 
 ## Verification
 

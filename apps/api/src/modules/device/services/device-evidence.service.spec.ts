@@ -329,6 +329,28 @@ describe('latest stream measurement', () => {
     });
   });
 
+  it('does not present a partially delivered attempt as success', async () => {
+    const { service } = setup([record(e5(), future)]);
+    await expect(
+      service.latestStreamMeasurement('camera-1', 'tenant'),
+    ).resolves.toMatchObject({
+      state: 'INCOMPLETE',
+      measurement: {
+        complete: false,
+        negotiation: { result: 'SUCCEEDED' },
+        media: { proof: null },
+      },
+    });
+  });
+
+  it('keeps a partial attempt flagged incomplete after it expires', async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const { service } = setup([record(e5(), past)]);
+    await expect(
+      service.latestStreamMeasurement('camera-1', 'tenant'),
+    ).resolves.toMatchObject({ state: 'EXPIRED', measurement: { complete: false } });
+  });
+
   it('marks an old success as expired while keeping its original result', async () => {
     const past = new Date(Date.now() - 1000).toISOString();
     const { service } = setup([record(e6(), past), record(e5(), past)]);

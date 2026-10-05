@@ -35,13 +35,14 @@ def failure(error):
     return ProbeError()
 
 
-def observation(config, level, *, result='SUCCEEDED', reason='NONE', observed=None, **proof):
+def observation(config, level, *, result='SUCCEEDED', reason='NONE', observed=None, validity=60, **proof):
+    # Validity is fixed at observation time and never extended on resend.
     observed = observed or datetime.now(timezone.utc)
     return {
         'deviceId': config['deviceId'], 'probeId': config['probeId'],
         'sourceEventKey': str(uuid.uuid4()), 'source': 'ADAPTER',
         'level': level, 'result': result, 'reason': reason,
-        'observedAt': timestamp(observed), 'expiresAt': timestamp(observed + timedelta(seconds=60)),
+        'observedAt': timestamp(observed), 'expiresAt': timestamp(observed + timedelta(seconds=validity)),
         **proof,
     }
 
@@ -73,34 +74,51 @@ def collect(config, credentials, budget, duration, *, discovery_class=OnvifDisco
     return rows
 
 
-def deliver(rows, api_url, observer_id, device_key, budget, *, post=http_post, sleep=time.sleep):
-    """At most two attempts per event; same UUID/timestamps/body on retries."""
+def evidence_endpoint(api_url, observer_id, device_key):
     base, _ = checked_url(api_url, {'http', 'https'})
     if '?' in base:
         raise ProbeError()
-    url = base.rstrip('/') + '/telemetry/stream-evidence'
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json',
                'x-device-id': observer_id, 'x-device-key': device_key}
+    return base.rstrip('/') + '/telemetry/stream-evidence', headers
+
+
+def encode_row(row):
+    body = json.dumps(row, separators=(',', ':')).encode()
+    if len(body) > 4096:
+        raise ProbeError()
+    return body
+
+
+def post_row(body, url, headers, budget, *, post=http_post):
+    """One POST of one already-encoded row. ACCEPTED (stored), DUPLICATE (the API
+    already had this sourceEventKey; idempotent), REJECTED (4xx: never resend),
+    UNAVAILABLE (network/5xx/unreadable: safe to resend the same bytes)."""
+    try:
+        status, _, response = post(url, body, headers, budget, max_bytes=4096)
+        if status in {200, 201}:
+            accepted = json.loads(response).get('accepted')
+            if type(accepted) is int and accepted in {0, 1}:
+                return 'ACCEPTED' if accepted else 'DUPLICATE'
+            return 'UNAVAILABLE'
+        return 'UNAVAILABLE' if 500 <= status <= 599 else 'REJECTED'
+    except Exception:
+        # Optional evidence delivery never affects core health/collection.
+        return 'UNAVAILABLE'
+
+
+def deliver(rows, api_url, observer_id, device_key, budget, *, post=http_post, sleep=time.sleep):
+    """At most two attempts per event; same UUID/timestamps/body on retries."""
+    url, headers = evidence_endpoint(api_url, observer_id, device_key)
     delivered = 0
     for row in rows:
-        body = json.dumps(row, separators=(',', ':')).encode()
-        if len(body) > 4096:
-            raise ProbeError()
+        body = encode_row(row)
         for attempt in range(2):
-            try:
-                status, _, response = post(url, body, headers, budget, max_bytes=4096)
-                if status == 200 or status == 201:
-                    accepted = json.loads(response).get('accepted')
-                    if type(accepted) is not int or accepted not in {0, 1}:
-                        raise ProbeError()
-                    delivered += 1
-                    break
-                if status < 500 or status > 599:
-                    return delivered
-            except Exception:
-                # Optional evidence delivery never affects core health/collection.
-                pass
-            if attempt == 1:
+            outcome = post_row(body, url, headers, budget, post=post)
+            if outcome in {'ACCEPTED', 'DUPLICATE'}:
+                delivered += 1
+                break
+            if outcome == 'REJECTED' or attempt == 1:
                 return delivered
             try:
                 delay = min(1.0, budget.remaining())

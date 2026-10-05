@@ -1484,15 +1484,22 @@ describe('PSOP local telemetry ingestion', () => {
 
     // A newer failed attempt replaces the latest measurement, not the history.
     const failedAttempt = randomUUID();
-    const { negotiation: _n, ...failed } = row('E5_RTSP_SESSION_NEGOTIATED');
-    await send({
-      ...failed,
-      attemptId: failedAttempt,
-      observedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 60000).toISOString(),
-      result: 'FAILED',
-      reason: 'AUTHENTICATION_FAILED',
-    }).expect(201);
+    const failedAt = new Date();
+    // As emitted by the check: E5 FAILED plus E6 NOT_OBSERVED, one attemptId.
+    for (const [level, result, reason] of [
+      ['E5_RTSP_SESSION_NEGOTIATED', 'FAILED', 'AUTHENTICATION_FAILED'],
+      ['E6_FRAMES_RECEIVED', 'NOT_OBSERVED', 'NOT_ATTEMPTED'],
+    ]) {
+      const { negotiation: _n, ...failed } = row(level);
+      await send({
+        ...failed,
+        attemptId: failedAttempt,
+        observedAt: failedAt.toISOString(),
+        expiresAt: new Date(failedAt.getTime() + 60000).toISOString(),
+        result,
+        reason,
+      }).expect(201);
+    }
     expect((await read(recorderChildDeviceId).expect(200)).body).toMatchObject({
       state: 'FAILED',
       measurement: {
@@ -1502,6 +1509,41 @@ describe('PSOP local telemetry ingestion', () => {
         media: { proof: null },
       },
     });
+
+    // Partial delivery from the periodic executor: E5 stored, E6 still queued.
+    const partialAttempt = randomUUID();
+    const partialAt = new Date(Date.now() + 1000);
+    const late = (level: string, extra: object = {}) => ({
+      ...row(level, extra),
+      attemptId: partialAttempt,
+      observedAt: partialAt.toISOString(),
+      expiresAt: new Date(partialAt.getTime() + 60000).toISOString(),
+    });
+    await send(late('E5_RTSP_SESSION_NEGOTIATED')).expect(201);
+    expect((await read(recorderChildDeviceId).expect(200)).body).toMatchObject({
+      state: 'INCOMPLETE',
+      measurement: { attemptId: partialAttempt, complete: false },
+    });
+    // The queued E6 arrives later with its original identifiers and timestamps;
+    // a byte-identical resend is idempotent and never refreshes the evidence.
+    const queued = late('E6_FRAMES_RECEIVED', {
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 3,
+        windowMs: 5000,
+        lastReceivedAt: partialAt.toISOString(),
+      },
+    });
+    expect((await send(queued).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(queued).expect(201)).body).toEqual({ accepted: 0 });
+    const completed = (await read(recorderChildDeviceId).expect(200)).body;
+    expect(completed).toMatchObject({
+      state: 'SUCCEEDED',
+      measurement: { attemptId: partialAttempt, complete: true },
+    });
+    expect(completed.measurement.expiresAt).toBe(
+      new Date(partialAt.getTime() + 60000).toISOString(),
+    );
 
     // Tenant isolation on read; other devices report absence distinctly.
     await read(foreignDeviceId).expect(404);

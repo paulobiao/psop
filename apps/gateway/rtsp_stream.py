@@ -6,7 +6,6 @@ No decoder, subprocess, media file, packet capture, or recording operation.
 from __future__ import annotations
 
 import re
-import socket
 import ssl
 import struct
 import time
@@ -93,9 +92,9 @@ def rtp_video(packet, payload_types, expected_ssrc=None):
 
 
 class RtspProbe:
-    def __init__(self, uri, credentials, budget, *, connect=socket.create_connection):
+    def __init__(self, uri, credentials, budget, *, connect=None):
         self.uri, self.origin = checked_url(uri, {'rtsp', 'rtsps'})
-        self.credentials, self.budget, self.connect = credentials, budget, connect
+        self.credentials, self.budget, self.connect = credentials, budget, connect or budget.connect
         self.sock = None
         self.buffer = bytearray()
         self.cseq = 0
@@ -169,7 +168,8 @@ class RtspProbe:
 
     def request(self, method, uri, headers=None):
         fields = dict(headers or {})
-        for attempt in range(2):
+        # Unauthenticated, authenticated, and at most one renewal of a stale nonce.
+        for attempt in range(3):
             self.cseq += 1
             fields['CSeq'] = str(self.cseq)
             fields['User-Agent'] = 'PSOP-Manual-Stream-Probe/1'
@@ -191,8 +191,10 @@ class RtspProbe:
             if status == 401:
                 challenges = response.get('www-authenticate', [])
                 scheme = offered_schemes(challenges)
-                if attempt == 1:
-                    stale = any(re.search(r'(^|[\s,])stale\s*=\s*"?true\b', c, re.I) for c in challenges)
+                stale = any(re.search(r'(^|[\s,])stale\s*=\s*"?true\b', c, re.I) for c in challenges)
+                # stale=true answers a correct response with an expired nonce (RFC 7616 3.3):
+                # renew once with the same credentials; any other rejection is final.
+                if attempt == 2 or (attempt == 1 and not stale):
                     raise self._failure('AUTHENTICATION_FAILED', method, status, scheme,
                                         'STALE_NONCE' if stale else 'CREDENTIALS_REJECTED')
                 if not challenges:

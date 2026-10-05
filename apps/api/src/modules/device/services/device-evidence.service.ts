@@ -14,6 +14,10 @@ type StreamPayload = Pick<
   IngestStreamEvidenceDto,
   'level' | 'result' | 'reason' | 'attemptId' | 'endpoint' | 'media'
 >;
+const NVR_ATTEMPT_LEVELS = [
+  'E5_RTSP_SESSION_NEGOTIATED',
+  'E6_FRAMES_RECEIVED',
+];
 const STREAM_ORDER: string[] = [
   'E4_STREAM_URI_OBTAINED',
   'E5_RTSP_SESSION_NEGOTIATED',
@@ -241,12 +245,25 @@ export class DeviceEvidenceService {
         })
       : null;
     const succeeded = outcome.result === 'SUCCEEDED';
+    // An NVR-mediated run always emits E5 and E6; if one has not reached the
+    // ledger (partial delivery), the attempt must not read as a success.
+    const complete =
+      endpoint?.access !== 'NVR_MEDIATED' ||
+      NVR_ATTEMPT_LEVELS.every((level) => rows.some((row) => row.level === level));
     return {
       deviceId,
       generatedAt,
-      state: expiresAt < now ? 'EXPIRED' : succeeded ? 'SUCCEEDED' : 'FAILED',
+      state:
+        expiresAt < now
+          ? 'EXPIRED'
+          : !complete
+            ? 'INCOMPLETE'
+            : succeeded
+              ? 'SUCCEEDED'
+              : 'FAILED',
       measurement: {
         attemptId: attemptId ?? null,
+        complete,
         observedAt: latest.observedAt.toISOString(),
         expiresAt: new Date(expiresAt).toISOString(),
         freshness: expiresAt >= now ? 'FRESH' : 'STALE',

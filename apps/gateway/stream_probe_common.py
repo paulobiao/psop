@@ -6,6 +6,7 @@ import http.client
 import ipaddress
 import re
 import secrets
+import socket
 import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
@@ -61,6 +62,11 @@ class Budget:
         if left <= 0:
             raise ProbeError('TIMEOUT')
         return min(left, self.timeout)
+
+    def connect(self, address, timeout=None, source_address=None):
+        """Every probe TCP connection opens here, so a subclass can make it
+        abortable (see stream_scheduler.StopBudget)."""
+        return socket.create_connection(address, timeout, source_address)
 
 
 def checked_url(url, schemes, *, host=None, origin=None, allow_userinfo=False):
@@ -159,6 +165,7 @@ def http_post(url, body, headers, budget, max_bytes=262144):
     path = parsed.path + ('?' + parsed.query if parsed.query else '')
     cls = http.client.HTTPSConnection if scheme == 'https' else http.client.HTTPConnection
     connection = cls(host, port, timeout=budget.remaining())
+    connection._create_connection = budget.connect  # http.client's own connect hook
     try:
         connection.request('POST', path, body=body, headers=headers)
         reply = connection.getresponse()

@@ -14,6 +14,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import signal
 import uuid
 from urllib.parse import urlsplit
@@ -41,6 +42,25 @@ def bind_channel(mapping, channel_id, channel_number, probe_id, configured_obser
     return binding
 
 
+def uri_channel(uri, channel_number):
+    """Checks the channel a known-format URI selects against the binding.
+
+    Speco (TVT-style) URIs carry `chID=N` in the path (`/chID=1&streamType=main`)
+    or the query (`?chID=1`); a different, repeated or malformed chID is refused before
+    any network I/O. Any other format cannot be checked here: the association
+    stays as declared by the operator ('OPERATOR_DECLARED'), never 'verified'.
+    """
+    parts = urlsplit(uri)
+    values = re.findall(r'(?:^|[/?&;])chid=([^&;/?]*)', f'{parts.path}?{parts.query}', re.I)
+    if not values:
+        return 'OPERATOR_DECLARED'
+    # A repeated chID is refused even when identical: which one a recorder uses is undefined.
+    value = values[0]
+    if len(values) > 1 or not re.fullmatch(r'\d{1,5}', value) or int(value) != channel_number:
+        raise ProbeError()
+    return 'URI_CHID_MATCHED'
+
+
 def nvr_endpoint(uri, channel_number):
     """Path hash only: no userinfo, query, fragment or raw URI leaves the probe."""
     clean, (scheme, host, port) = checked_url(uri, {'rtsp', 'rtsps'})
@@ -50,7 +70,7 @@ def nvr_endpoint(uri, channel_number):
             'access': 'NVR_MEDIATED'}
 
 
-def check(uri, credentials, budget, duration, *, binding=None, rtsp_class=RtspProbe):
+def check(uri, credentials, budget, duration, *, binding=None, validity=60, rtsp_class=RtspProbe):
     """Returns (terminal summary, E5/E6 ingestion rows); rows only with a binding."""
     summary = {'access': 'NVR_MEDIATED', 'uriSource': 'MANUAL_OPERATOR_INPUT',
                'e4Discovery': 'NOT_PERFORMED', 'negotiation': 'NOT_ATTEMPTED',
@@ -62,7 +82,7 @@ def check(uri, credentials, budget, duration, *, binding=None, rtsp_class=RtspPr
         summary.update(deviceId=binding['deviceId'], channelNumber=binding['channelNumber'], attemptId=attempt)
     def row(level, **proof):
         if binding:
-            rows.append(observation(binding, level, endpoint=endpoint, attemptId=attempt, **proof))
+            rows.append(observation(binding, level, endpoint=endpoint, attemptId=attempt, validity=validity, **proof))
     stage = 'negotiation'
     try:
         with rtsp_class(uri, credentials, budget) as rtsp:
@@ -116,6 +136,7 @@ def main(argv=None):
         if args.channel_id is not None:
             binding = bind_channel(_load_speco_map(DEFAULT_LOCAL_MAP), args.channel_id, args.channel_number,
                                    args.probe_id, local.get('PSOP_SPECO_RECORDER_DEVICE_ID'))
+            association = uri_channel(args.uri, args.channel_number)
         api_url = os.environ.get('PSOP_API_URL') or local.get('PSOP_API_URL')
         device_key = os.environ.get('PSOP_SPECO_RECORDER_DEVICE_KEY') or local.get('PSOP_SPECO_RECORDER_DEVICE_KEY')
         if args.send:
@@ -130,7 +151,8 @@ def main(argv=None):
         return 130
     except Exception:
         print('CHECK_CONFIGURATION_ERROR: URI must be credential-free rtsp:// on PSOP_SPECO_HOST; '
-              '--channel-id/--channel-number must match one speco.local.json channel; --probe-id must be a UUID.')
+              '--channel-id/--channel-number must match one speco.local.json channel and any chID in the URI; '
+              '--probe-id must be a UUID.')
         return 2
 
     def expired(*_):
@@ -140,6 +162,8 @@ def main(argv=None):
     try:
         budget = Budget(args.max_duration, args.timeout)
         summary, rows = check(args.uri, Credentials(username, password), budget, args.duration, binding=binding)
+        if binding:
+            summary['uriChannel'] = association
         if args.send:
             delivered = deliver(rows, api_url, binding['observerId'], device_key, budget)
             summary['delivery'] = 'DELIVERED' if delivered == len(rows) else 'DELIVERY_ERROR'

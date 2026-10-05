@@ -464,6 +464,34 @@ class StreamProbeTests(unittest.TestCase):
         expired = RtspFixture(challenges=[digest.replace('FALSE', 'TRUE')], password='wrong')
         self.assertEqual(run(expired)['diagnostic']['detail'], 'STALE_NONCE')
 
+    def test_stale_nonce_is_renewed_once_without_new_credentials(self):
+        import nvr_rtsp_check
+        stale = 'Digest realm="fixture-realm", nonce="{nonce}", qop="auth", stale=TRUE'
+
+        class ExpiresNonce(RtspFixture):
+            """Right password, but the server expires the nonce `times` times (RFC 7616 3.3)."""
+            def __init__(self, times):
+                super().__init__(challenges=[stale], rotate_nonce=True)
+                self.times = times
+            def digest_ok(self, method, uri, header):
+                if header and self.times:
+                    self.times -= 1
+                    return False
+                return super().digest_ok(method, uri, header)
+
+        def run(rtsp):
+            return nvr_rtsp_check.check(URI, CREDENTIALS, Budget(5, .5), 1,
+                rtsp_class=lambda *args: RtspProbe(*args, connect=lambda *a, **kw: rtsp))[0]
+        once = ExpiresNonce(1)
+        self.assertEqual(run(once)['negotiation'], 'SUCCEEDED')
+        self.assertEqual(sum(r[0] == 'DESCRIBE' for r in once.requests), 3)
+        # Bounded: a second stale answer for the same request is a failure, not a loop.
+        again = ExpiresNonce(2)
+        summary = run(again)
+        self.assertEqual((summary['negotiation'], summary['diagnostic']['detail']),
+                         ('FAILED:AUTHENTICATION_FAILED', 'STALE_NONCE'))
+        self.assertEqual(sum(r[0] == 'DESCRIBE' for r in again.requests), 3)
+
 
 
 NVR_MAPPING = {'recorder': {'deviceId': CONFIG['observerId']},
@@ -591,6 +619,35 @@ class NvrMediatedEvidenceTests(unittest.TestCase):
         code, out = self.cli(base[:4] + ['--channel-number', '1'] + base[6:] + ['--send'], post=post)
         self.assertEqual((code, len(sent)), (2, 2))
         self.assertTrue(out.startswith('CHECK_CONFIGURATION_ERROR'))
+
+    def test_speco_chid_must_select_the_bound_channel_before_any_io(self):
+        import nvr_rtsp_check
+        check = nvr_rtsp_check.uri_channel
+        self.assertEqual(check('rtsp://127.0.0.1:554/chID=1&streamType=main&linkType=tcp', 1), 'URI_CHID_MATCHED')
+        self.assertEqual(check('rtsp://127.0.0.1:554/?chID=01&streamType=sub', 1), 'URI_CHID_MATCHED')
+        # Unknown format: nothing to verify, the operator's association stands.
+        self.assertEqual(check(URI, 1), 'OPERATOR_DECLARED')
+        for uri in ['rtsp://127.0.0.1:554/chID=2&streamType=main', 'rtsp://127.0.0.1:554/?chID=2',
+                    'rtsp://127.0.0.1:554/chID=1&chID=2', 'rtsp://127.0.0.1:554/chid=x', 'rtsp://127.0.0.1:554/chID=',
+                    # Repeated, even identical: refused.
+                    'rtsp://127.0.0.1:554/chID=1&chID=1', 'rtsp://127.0.0.1:554/chID=1?chID=1']:
+            with self.subTest(uri=uri), self.assertRaises(ProbeError):
+                check(uri, 1)
+        # CLI: chID=2 with the channel-1 binding stops before prompts or sockets.
+        prompt, connect = Mock(), Mock()
+        env = {'PSOP_SPECO_HOST': '127.0.0.1'}
+        out = io.StringIO()
+        with patch.object(nvr_rtsp_check, '_load_simple_env', return_value=env), \
+             patch.object(nvr_rtsp_check, '_load_speco_map', return_value=NVR_MAPPING), \
+             patch.object(nvr_rtsp_check.getpass, 'getpass', prompt), \
+             patch.object(socket, 'create_connection', connect), contextlib.redirect_stdout(out):
+            code = nvr_rtsp_check.main(['--uri', 'rtsp://127.0.0.1:554/chID=2&streamType=main',
+                                        '--channel-id', '{ch-1}', '--channel-number', '1',
+                                        '--probe-id', CONFIG['probeId'], '--send'])
+        self.assertEqual(code, 2)
+        self.assertTrue(out.getvalue().startswith('CHECK_CONFIGURATION_ERROR'))
+        prompt.assert_not_called()
+        connect.assert_not_called()
 
 
 if __name__ == '__main__':

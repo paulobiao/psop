@@ -35,6 +35,7 @@ apps/gateway/state/
 apps/gateway/.env.speco.local
 apps/gateway/speco.local.json
 apps/gateway/stream-probe.local.json
+apps/gateway/stream-scheduler.local.json
 
 # Terraform local state and working directory
 

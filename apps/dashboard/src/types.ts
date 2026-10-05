@@ -443,6 +443,7 @@ export type StreamMeasurementState =
   | "NO_MEASUREMENT"
   | "SUCCEEDED"
   | "FAILED"
+  | "INCOMPLETE"
   | "EXPIRED";
 
 export interface StreamStageOutcome {
@@ -456,6 +457,8 @@ export interface DeviceStreamMeasurement {
   state: StreamMeasurementState;
   measurement: {
     attemptId: string | null;
+    /** False when only part of an NVR-mediated attempt reached PSOP. */
+    complete: boolean;
     observedAt: string;
     expiresAt: string;
     freshness: "FRESH" | "STALE";

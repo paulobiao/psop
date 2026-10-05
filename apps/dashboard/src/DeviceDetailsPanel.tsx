@@ -142,6 +142,11 @@ const STREAM_STATE: Record<
     badge: "offline",
     note: "The latest probe attempt did not complete.",
   },
+  INCOMPLETE: {
+    label: "Partial delivery",
+    badge: "degraded",
+    note: "Only part of the latest attempt reached PSOP; the rest is pending or was rejected.",
+  },
   EXPIRED: {
     label: "Evidence expired",
     badge: "degraded",
@@ -177,16 +182,24 @@ function StreamMeasurementSection({
         <span className={`badge badge--${state.badge}`}>{state.label}</span>
       </div>
 
-      <p className="details-section__note">{state.note}</p>
+      <p className="details-section__note">
+        {state.note}
+        {m && !m.complete && value?.state !== "INCOMPLETE"
+          ? " This attempt was only partially delivered."
+          : ""}
+      </p>
 
       {m && (
         <div className="detail-metrics">
           <DetailMetric
             label="Result"
             value={
-              m.result === "SUCCEEDED"
-                ? "Succeeded"
-                : `${enumLabel(m.result)} · ${enumLabel(m.reason)}`
+              // Overall result needs the whole attempt; stages below keep their own outcome.
+              !m.complete
+                ? "Incomplete · partially delivered"
+                : m.result === "SUCCEEDED"
+                  ? "Succeeded"
+                  : `${enumLabel(m.result)} · ${enumLabel(m.reason)}`
             }
             icon={<Activity size={19} />}
           />
