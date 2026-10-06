@@ -1,6 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # Historical dashboard snapshots kept on disk for reference only.
+  # They carry a duplicate package.json name ("dashboard") and must never
+  # be treated as workspace packages.
+  - "!apps/dashboard-backup-*"
 
 allowBuilds:
   '@prisma/engines': true

@@ -20,6 +20,7 @@ import {
   getOperationsOverview,
   evaluateFleetConnectivity,
   getDeviceConnectivityEvents,
+  getDeviceStreamMeasurement,
   getDeviceTelemetry,
   getTelemetryDemoStatus,
   setDeviceDemoState,
@@ -29,6 +30,7 @@ import type {
   ConnectivityEvent,
   ConnectivityState,
   DeviceAlert,
+  DeviceStreamMeasurement,
   FleetDevice,
   GatewayManagedDevice,
   InventoryDevice,
@@ -39,6 +41,33 @@ interface DeviceDetailsPanelProps {
   deviceId: string;
   onClose: () => void;
   onChanged?: () => void;
+}
+
+function telemetryDetail(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): unknown {
+  return value?.[key];
+}
+
+function detailNumber(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): number | null {
+  const item = telemetryDetail(value, key);
+  return typeof item === "number" && Number.isFinite(item)
+    ? item
+    : null;
+}
+
+function detailString(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): string | null {
+  const item = telemetryDetail(value, key);
+  return typeof item === "string" && item.trim()
+    ? item
+    : null;
 }
 
 function formatDate(value: string | null): string {
@@ -92,6 +121,151 @@ function stateLabel(state: ConnectivityState): string {
   };
 
   return labels[state];
+}
+
+const STREAM_STATE: Record<
+  DeviceStreamMeasurement["state"] | "UNAVAILABLE",
+  { label: string; badge: string; note: string }
+> = {
+  NO_MEASUREMENT: {
+    label: "No measurement",
+    badge: "never_seen",
+    note: "No stream probe has reported for this camera.",
+  },
+  SUCCEEDED: {
+    label: "Media observed",
+    badge: "online",
+    note: "Session negotiated and video RTP packets received.",
+  },
+  FAILED: {
+    label: "Measurement failed",
+    badge: "offline",
+    note: "The latest probe attempt did not complete.",
+  },
+  INCOMPLETE: {
+    label: "Partial delivery",
+    badge: "degraded",
+    note: "Only part of the latest attempt reached PSOP; the rest is pending or was rejected.",
+  },
+  EXPIRED: {
+    label: "Evidence expired",
+    badge: "degraded",
+    note: "The latest result is past its validity; it is not current.",
+  },
+  UNAVAILABLE: {
+    label: "Unavailable",
+    badge: "unknown",
+    note: "Stream measurement could not be loaded.",
+  },
+};
+
+function enumLabel(value: string | null | undefined): string {
+  return value ? value.toLowerCase().replaceAll("_", " ") : "—";
+}
+
+function StreamMeasurementSection({
+  value,
+}: {
+  value: DeviceStreamMeasurement | null;
+}) {
+  const state = STREAM_STATE[value?.state ?? "UNAVAILABLE"];
+  const m = value?.measurement ?? null;
+  const proof = m?.media.proof ?? null;
+
+  return (
+    <section className="details-section">
+      <div className="details-section__heading">
+        <div>
+          <span className="eyebrow">Video assurance · separate from connectivity</span>
+          <h3>Stream measurement</h3>
+        </div>
+        <span className={`badge badge--${state.badge}`}>{state.label}</span>
+      </div>
+
+      <p className="details-section__note">
+        {state.note}
+        {m && !m.complete && value?.state !== "INCOMPLETE"
+          ? " This attempt was only partially delivered."
+          : ""}
+      </p>
+
+      {m && (
+        <div className="detail-metrics">
+          <DetailMetric
+            label="Result"
+            value={
+              // Overall result needs the whole attempt; stages below keep their own outcome.
+              !m.complete
+                ? "Incomplete · partially delivered"
+                : m.result === "SUCCEEDED"
+                  ? "Succeeded"
+                  : `${enumLabel(m.result)} · ${enumLabel(m.reason)}`
+            }
+            icon={<Activity size={19} />}
+          />
+          <DetailMetric
+            label="Negotiation (DESCRIBE/SETUP/PLAY)"
+            value={
+              m.negotiation
+                ? `${enumLabel(m.negotiation.result)}${m.negotiation.reason === "NONE" ? "" : ` · ${enumLabel(m.negotiation.reason)}`}`
+                : "Not reported"
+            }
+            icon={<Network size={19} />}
+          />
+          <DetailMetric
+            label={
+              proof?.measurement === "DECODED_VIDEO_FRAMES"
+                ? "Decoded video frames"
+                : "Video RTP packets (not decoded frames)"
+            }
+            value={
+              proof
+                ? `${proof.count.toLocaleString()} in ${(proof.windowMs / 1000).toFixed(1)} s`
+                : m.media.result
+                  ? `${enumLabel(m.media.result)} · ${enumLabel(m.media.reason)}`
+                  : "Not reported"
+            }
+            icon={<Camera size={19} />}
+          />
+          <DetailMetric
+            label="Origin"
+            value={
+              m.access === "NVR_MEDIATED"
+                ? `Via recorder ${m.observer?.name ?? ""}${m.channelNumber ? ` · channel ${m.channelNumber}` : ""}`.trim()
+                : `${enumLabel(m.source)}${m.observer ? ` · ${m.observer.name}` : ""}`
+            }
+            icon={<HardDrive size={19} />}
+          />
+          <DetailMetric
+            label="URI source"
+            value={
+              m.uriSource === "MANUAL_OPERATOR_INPUT"
+                ? "Operator-supplied (no discovery)"
+                : enumLabel(m.uriSource)
+            }
+            icon={<Database size={19} />}
+          />
+          <DetailMetric
+            label="Measured"
+            value={formatDate(m.observedAt)}
+            icon={<Clock3 size={19} />}
+          />
+          <DetailMetric
+            label={m.freshness === "FRESH" ? "Valid until" : "Expired at"}
+            value={formatDate(m.expiresAt)}
+            icon={<Clock3 size={19} />}
+          />
+        </div>
+      )}
+
+      {m && (
+        <small className="details-section__note">
+          Probe attestation ({enumLabel(m.confidence)}). Does not prove
+          decoded images, recording or retrieval.
+        </small>
+      )}
+    </section>
+  );
 }
 
 function DetailMetric({
@@ -208,6 +382,8 @@ export default function DeviceDetailsPanel({
   ] = useState<GatewayManagedDevice | null>(
     null,
   );
+  const [streamMeasurement, setStreamMeasurement] =
+    useState<DeviceStreamMeasurement | null>(null);
   const [events, setEvents] = useState<ConnectivityEvent[]>([]);
   const [alerts, setAlerts] = useState<DeviceAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,38 +415,26 @@ export default function DeviceDetailsPanel({
         setDerivedGatewayStatus(null);
         setEvents([]);
         setAlerts([]);
+        setStreamMeasurement(null);
         setDemoEnabled(false);
 
-        const supportsDirectTelemetry =
-          deviceResult.monitoringMode ===
-            'DIRECT' &&
+        const supportsTelemetry =
+          deviceResult.monitoringMode !==
+            'INVENTORY_ONLY' &&
           [
             'CAMERA',
             'RECORDER',
             'GATEWAY',
           ].includes(deviceResult.deviceType);
 
-        if (!supportsDirectTelemetry) {
-          const [
-            alertsResult,
-            overviewResult,
-          ] = await Promise.all([
-            getDeviceAlerts(
+        if (!supportsTelemetry) {
+          const alertsResult =
+            await getDeviceAlerts(
               deviceId,
               controller.signal,
-            ),
-            getOperationsOverview(
-              controller.signal,
-            ),
-          ]);
+            );
 
           setAlerts(alertsResult);
-          setDerivedGatewayStatus(
-            overviewResult.gatewayManaged.find(
-              (item) =>
-                item.device.id === deviceId,
-            ) ?? null,
-          );
           setError(null);
         } else {
           const [
@@ -278,6 +442,8 @@ export default function DeviceDetailsPanel({
             eventsResult,
             alertsResult,
             demoStatus,
+            overviewResult,
+            streamResult,
           ] = await Promise.all([
             getDeviceTelemetry(
               deviceId,
@@ -294,12 +460,33 @@ export default function DeviceDetailsPanel({
             getTelemetryDemoStatus(
               controller.signal,
             ),
+            getOperationsOverview(
+              controller.signal,
+            ),
+            // Optional evidence: its failure must not hide the device panel.
+            deviceResult.deviceType === "CAMERA"
+              ? getDeviceStreamMeasurement(
+                  deviceId,
+                  controller.signal,
+                ).catch(() => null)
+              : Promise.resolve(null),
           ]);
+
+          setStreamMeasurement(streamResult);
 
           setTelemetry(telemetryResult);
           setDemoEnabled(demoStatus.enabled);
           setEvents(eventsResult.events);
           setAlerts(alertsResult);
+          setDerivedGatewayStatus(
+            deviceResult.monitoringMode ===
+              'VIA_GATEWAY'
+              ? overviewResult.gatewayManaged.find(
+                  (item) =>
+                    item.device.id === deviceId,
+                ) ?? null
+              : null,
+          );
           setError(null);
         }
       } catch (requestError) {
@@ -441,17 +628,29 @@ export default function DeviceDetailsPanel({
               'VIA_GATEWAY' && (
               <section className="monitoring-notice">
                 <strong>
-                  Monitored through another device
+                  {telemetry?.monitoring
+                    .individualVerification ===
+                  'RECORDER_VERIFIED'
+                    ? 'Recorder-verified telemetry'
+                    : 'Monitored through another device'}
                 </strong>
                 <span>
-                  Individual camera telemetry is not
-                  available until the gateway exposes
-                  device-level status.
+                  {telemetry?.monitoring
+                    .individualVerification ===
+                  'RECORDER_VERIFIED'
+                    ? `Individual device status is verified by ${
+                        derivedGatewayStatus?.gateway.name ??
+                        'the assigned recorder'
+                      }.`
+                    : 'Individual device status is not independently verified by the current monitoring source.'}
                 </span>
               </section>
             )}
 
-            {derivedGatewayStatus && (
+            {derivedGatewayStatus &&
+              telemetry?.monitoring
+                .individualVerification !==
+                'RECORDER_VERIFIED' && (
               <section className="gateway-derived-card">
                 <div className="gateway-derived-card__icon">
                   <Network size={21} />
@@ -593,6 +792,11 @@ export default function DeviceDetailsPanel({
             </section>
             )}
 
+            {telemetry &&
+              inventoryDevice.deviceType === "CAMERA" && (
+                <StreamMeasurementSection value={streamMeasurement} />
+              )}
+
             {telemetry && (
             <section className="details-section">
               <div className="details-section__heading">
@@ -604,24 +808,192 @@ export default function DeviceDetailsPanel({
               </div>
 
               <div className="detail-metrics">
+                {inventoryDevice?.deviceType ===
+                "RECORDER" ? (
+                  <>
+                    <DetailMetric
+                      label="Storage"
+                      value={
+                        detailString(
+                          telemetry.telemetry?.details,
+                          "storageState",
+                        ) === "NOT_INSTALLED"
+                          ? "No HDD installed"
+                          : detailString(
+                              telemetry.telemetry?.details,
+                              "storageState",
+                            ) ?? "Not reported"
+                      }
+                      icon={<HardDrive size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Channels online"
+                      value={
+                        (() => {
+                          const online = detailNumber(
+                            telemetry.telemetry?.details,
+                            "onlineChannelCount",
+                          );
+                          const observed = detailNumber(
+                            telemetry.telemetry?.details,
+                            "observedChannelCount",
+                          );
+                          return online === null
+                            ? "Not reported"
+                            : observed === null
+                              ? `${online}`
+                              : `${online} / ${observed}`;
+                        })()
+                      }
+                      icon={<Camera size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="PoE power budget"
+                      value={
+                        (() => {
+                          const total = detailNumber(
+                            telemetry.telemetry?.details,
+                            "poeTotalPowerW",
+                          );
+                          const used = detailNumber(
+                            telemetry.telemetry?.details,
+                            "poeUsedPowerW",
+                          );
+                          return total === null
+                            ? "Not reported"
+                            : used === null
+                              ? `${total.toFixed(2)} W total`
+                              : `${used.toFixed(2)} / ${total.toFixed(2)} W`;
+                        })()
+                      }
+                      icon={<Activity size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="PoE remaining"
+                      value={
+                        (() => {
+                          const value = detailNumber(
+                            telemetry.telemetry?.details,
+                            "poeRemainingPowerW",
+                          );
+                          return value === null
+                            ? "Not reported"
+                            : `${value.toFixed(2)} W`;
+                        })()
+                      }
+                      icon={<Activity size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Firmware"
+                      value={
+                        telemetry.telemetry?.firmware ||
+                        "Not reported"
+                      }
+                      icon={<Cpu size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Model"
+                      value={
+                        telemetry.telemetry?.model ||
+                        "Not reported"
+                      }
+                      icon={<Camera size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Hardware"
+                      value={
+                        detailString(
+                          telemetry.telemetry?.details,
+                          "hardwareVersion",
+                        ) ?? "Not reported"
+                      }
+                      icon={<Cpu size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="API version"
+                      value={
+                        detailString(
+                          telemetry.telemetry?.details,
+                          "apiVersion",
+                        ) ?? "Not reported"
+                      }
+                      icon={<Network size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="ONVIF version"
+                      value={
+                        detailString(
+                          telemetry.telemetry?.details,
+                          "onvifVersion",
+                        ) ?? "Not reported"
+                      }
+                      icon={<Network size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Verification"
+                      value="Direct"
+                      icon={<Wifi size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Heartbeat age"
+                      value={formatDuration(
+                        telemetry.connectivity.ageSeconds,
+                      )}
+                      icon={<Clock3 size={19} />}
+                    />
+
+                    <DetailMetric
+                      label="Disks"
+                      value={
+                        (() => {
+                          const count = detailNumber(
+                            telemetry.telemetry?.details,
+                            "diskCount",
+                          );
+                          return count === null
+                            ? "Not reported"
+                            : `${count}`;
+                        })()
+                      }
+                      icon={<HardDrive size={19} />}
+                    />
+                  </>
+                ) : (
+                  <>
                 <DetailMetric
                   label="Temperature"
                   value={
                     telemetry.telemetry?.temperatureC === null ||
                     telemetry.telemetry?.temperatureC === undefined
-                      ? "—"
+                      ? "Not reported"
                       : `${telemetry.telemetry.temperatureC.toFixed(1)}°C`
                   }
                   icon={<Thermometer size={19} />}
                 />
 
                 <DetailMetric
-                  label="Storage used"
+                  label="Storage / recording"
                   value={
-                    telemetry.telemetry?.storageUsedPct === null ||
-                    telemetry.telemetry?.storageUsedPct === undefined
-                      ? "—"
-                      : `${telemetry.telemetry.storageUsedPct.toFixed(1)}%`
+                    telemetry.telemetry?.recordingStatus ===
+                    "NOT_AVAILABLE_NO_STORAGE"
+                      ? "Recording unavailable — recorder has no HDD"
+                      : telemetry.telemetry?.storageUsedPct === null ||
+                          telemetry.telemetry?.storageUsedPct === undefined
+                        ? telemetry.telemetry?.recordingStatus
+                            ?.toLowerCase()
+                            .replaceAll("_", " ") ??
+                          "Not reported"
+                        : `${telemetry.telemetry.storageUsedPct.toFixed(1)}%`
                   }
                   icon={<HardDrive size={19} />}
                 />
@@ -631,7 +1003,7 @@ export default function DeviceDetailsPanel({
                   value={
                     telemetry.telemetry?.bitrateKbps === null ||
                     telemetry.telemetry?.bitrateKbps === undefined
-                      ? "—"
+                      ? "Not reported"
                       : `${telemetry.telemetry.bitrateKbps} kbps`
                   }
                   icon={<Activity size={19} />}
@@ -645,15 +1017,82 @@ export default function DeviceDetailsPanel({
 
                 <DetailMetric
                   label="Firmware"
-                  value={telemetry.telemetry?.firmware ?? "—"}
+                  value={telemetry.telemetry?.firmware || "Not reported"}
                   icon={<Cpu size={19} />}
                 />
 
                 <DetailMetric
                   label="Model"
-                  value={telemetry.telemetry?.model ?? "—"}
+                  value={telemetry.telemetry?.model || "Not reported"}
                   icon={<Camera size={19} />}
                 />
+
+                <DetailMetric
+                  label="Channel"
+                  value={
+                    telemetry.telemetry?.channelNumber === null ||
+                    telemetry.telemetry?.channelNumber === undefined
+                      ? "Not applicable"
+                      : `Channel ${telemetry.telemetry.channelNumber}`
+                  }
+                  icon={<Camera size={19} />}
+                />
+
+                <DetailMetric
+                  label="PoE"
+                  value={
+                    telemetry.telemetry?.poePowerW === null ||
+                    telemetry.telemetry?.poePowerW === undefined
+                      ? "Not reported"
+                      : `Port ${
+                          telemetry.telemetry.poePort ?? "?"
+                        } · ${telemetry.telemetry.poePowerW.toFixed(2)} W`
+                  }
+                  icon={<Activity size={19} />}
+                />
+
+                <DetailMetric
+                  label="Protocol"
+                  value={telemetry.telemetry?.protocol || "Not reported"}
+                  icon={<Network size={19} />}
+                />
+
+                <DetailMetric
+                  label="Verification"
+                  value={
+                    telemetry.monitoring.individualVerification ===
+                    "RECORDER_VERIFIED"
+                      ? `Recorder verified${
+                          derivedGatewayStatus?.gateway.name
+                            ? ` · ${derivedGatewayStatus.gateway.name}`
+                            : ""
+                        }`
+                      : telemetry.monitoring.individualVerification ===
+                          "DIRECT"
+                        ? "Direct"
+                        : "Not individually verified"
+                  }
+                  icon={<Wifi size={19} />}
+                />
+
+                <DetailMetric
+                  label="Resolution"
+                  value={telemetry.telemetry?.resolution || "Not reported"}
+                  icon={<Gauge size={19} />}
+                />
+
+                <DetailMetric
+                  label="Frame rate"
+                  value={
+                    telemetry.telemetry?.frameRate === null ||
+                    telemetry.telemetry?.frameRate === undefined
+                      ? "Not reported"
+                      : `${telemetry.telemetry.frameRate} fps`
+                  }
+                  icon={<Activity size={19} />}
+                />
+                  </>
+                )}
               </div>
             </section>
             )}

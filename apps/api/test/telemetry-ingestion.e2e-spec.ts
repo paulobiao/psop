@@ -1321,6 +1321,238 @@ describe('PSOP local telemetry ingestion', () => {
     },
   );
 
+  it('ingests distinct stream evidence idempotently with tenant isolation and no heartbeat effects', async () => {
+    const before = await prisma.evidenceRecord.count({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+    });
+    const observedAt = new Date(Date.now() - 180000);
+    const payload = {
+      deviceId: recorderChildDeviceId,
+      probeId: randomUUID(),
+      sourceEventKey: randomUUID(),
+      level: 'E6_FRAMES_RECEIVED',
+      result: 'SUCCEEDED',
+      source: 'ADAPTER',
+      reason: 'NONE',
+      observedAt: observedAt.toISOString(),
+      expiresAt: new Date(observedAt.getTime() + 120000).toISOString(),
+      endpoint: {
+        protocol: 'rtsp',
+        host: '192.0.2.1',
+        port: 554,
+        pathSha256: 'a'.repeat(64),
+        profileSha256: 'b'.repeat(64),
+        discoveryMethod: 'ONVIF_GET_STREAM_URI',
+      },
+      negotiation: {
+        describeStatus: 200,
+        setupStatus: 200,
+        playStatus: 200,
+        videoTrackSelected: true,
+        sessionEstablished: true,
+        transport: 'RTP_AVP_TCP',
+      },
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 1,
+        windowMs: 1000,
+        lastReceivedAt: observedAt.toISOString(),
+      },
+    };
+    const send = (body: object, key = recorderKey) =>
+      request(app.getHttpServer())
+        .post(`${API}/telemetry/stream-evidence`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', key)
+        .send(body);
+    const snapshotBefore = await prisma.recorderObservationSnapshot.findUnique({
+      where: { deviceId: recorderChildDeviceId },
+    });
+    await send(payload, 'invalid-test-key').expect(401);
+    await send({ ...payload, deviceId: foreignDeviceId }).expect(400);
+    await send({ ...payload, media: { ...payload.media, count: 0 } }).expect(
+      400,
+    );
+    expect((await send(payload).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(payload).expect(201)).body).toEqual({ accepted: 0 });
+    expect(
+      await prisma.evidenceRecord.count({
+        where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      }),
+    ).toBe(before + 1);
+    const record = await prisma.evidenceRecord.findFirstOrThrow({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(record.level).toBe('E6_MEDIA_RECEIVED');
+    expect(record.expiresAt!.getTime()).toBeLessThan(Date.now());
+    expect(
+      await prisma.recorderObservationSnapshot.findUnique({
+        where: { deviceId: recorderChildDeviceId },
+      }),
+    ).toEqual(snapshotBefore);
+  });
+
+  it('ingests NVR-mediated E5/E6 for the recorder-reported channel and projects the latest attempt', async () => {
+    const read = (deviceId: string) =>
+      request(app.getHttpServer())
+        .get(`${API}/devices/${deviceId}/stream-measurement`)
+        .set(bearer(adminToken));
+    const send = (body: object) =>
+      request(app.getHttpServer())
+        .post(`${API}/telemetry/stream-evidence`)
+        .set('x-device-id', recorderDeviceId)
+        .set('x-device-key', recorderKey)
+        .send(body);
+    const observedAt = new Date(Date.now() - 1000);
+    const attemptId = randomUUID();
+    const negotiation = {
+      describeStatus: 200,
+      setupStatus: 200,
+      playStatus: 200,
+      videoTrackSelected: true,
+      sessionEstablished: true,
+      transport: 'RTP_AVP_TCP',
+    };
+    // Shape emitted by apps/gateway/nvr_rtsp_check.py --send.
+    const row = (level: string, extra: object = {}) => ({
+      deviceId: recorderChildDeviceId,
+      probeId: randomUUID(),
+      sourceEventKey: randomUUID(),
+      attemptId,
+      level,
+      result: 'SUCCEEDED',
+      source: 'ADAPTER',
+      reason: 'NONE',
+      observedAt: observedAt.toISOString(),
+      expiresAt: new Date(observedAt.getTime() + 60000).toISOString(),
+      endpoint: {
+        protocol: 'rtsp',
+        host: '192.0.2.1',
+        port: 554,
+        pathSha256: 'c'.repeat(64),
+        channelNumber: 2,
+        discoveryMethod: 'MANUAL_OPERATOR_INPUT',
+        access: 'NVR_MEDIATED',
+      },
+      negotiation,
+      ...extra,
+    });
+    const e5 = row('E5_RTSP_SESSION_NEGOTIATED');
+    const e6 = row('E6_FRAMES_RECEIVED', {
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 150,
+        windowMs: 5000,
+        lastReceivedAt: observedAt.toISOString(),
+      },
+    });
+
+    // Wrong channel, foreign tenant target and E4 claims are refused.
+    await send({ ...e6, endpoint: { ...e6.endpoint, channelNumber: 3 } }).expect(400);
+    await send({ ...e6, deviceId: foreignDeviceId }).expect(400);
+    await send({ ...e6, level: 'E4_STREAM_URI_OBTAINED', negotiation: undefined, media: undefined }).expect(400);
+
+    expect((await send(e5).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(e6).expect(201)).body).toEqual({ accepted: 1 });
+
+    const projection = (await read(recorderChildDeviceId).expect(200)).body;
+    expect(projection).toMatchObject({
+      state: 'SUCCEEDED',
+      measurement: {
+        attemptId,
+        freshness: 'FRESH',
+        source: 'ADAPTER',
+        observer: { id: recorderDeviceId, deviceType: 'RECORDER' },
+        access: 'NVR_MEDIATED',
+        uriSource: 'MANUAL_OPERATOR_INPUT',
+        channelNumber: 2,
+        negotiation: { result: 'SUCCEEDED', reason: 'NONE' },
+        media: {
+          result: 'SUCCEEDED',
+          proof: { measurement: 'RTP_VIDEO_PACKETS', count: 150 },
+        },
+        decodedFrames: 'NOT_MEASURED',
+      },
+    });
+    expect(JSON.stringify(projection)).not.toContain('192.0.2.1');
+    const ledger = await prisma.evidenceRecord.findMany({
+      where: { deviceId: recorderChildDeviceId, subject: 'video.stream' },
+      orderBy: { observedAt: 'desc' },
+    });
+    expect(ledger.some((r) => r.level === 'E4_STREAM_URI_OBTAINED')).toBe(false);
+
+    // A newer failed attempt replaces the latest measurement, not the history.
+    const failedAttempt = randomUUID();
+    const failedAt = new Date();
+    // As emitted by the check: E5 FAILED plus E6 NOT_OBSERVED, one attemptId.
+    for (const [level, result, reason] of [
+      ['E5_RTSP_SESSION_NEGOTIATED', 'FAILED', 'AUTHENTICATION_FAILED'],
+      ['E6_FRAMES_RECEIVED', 'NOT_OBSERVED', 'NOT_ATTEMPTED'],
+    ]) {
+      const { negotiation: _n, ...failed } = row(level);
+      await send({
+        ...failed,
+        attemptId: failedAttempt,
+        observedAt: failedAt.toISOString(),
+        expiresAt: new Date(failedAt.getTime() + 60000).toISOString(),
+        result,
+        reason,
+      }).expect(201);
+    }
+    expect((await read(recorderChildDeviceId).expect(200)).body).toMatchObject({
+      state: 'FAILED',
+      measurement: {
+        attemptId: failedAttempt,
+        reason: 'AUTHENTICATION_FAILED',
+        negotiation: { result: 'FAILED' },
+        media: { proof: null },
+      },
+    });
+
+    // Partial delivery from the periodic executor: E5 stored, E6 still queued.
+    const partialAttempt = randomUUID();
+    const partialAt = new Date(Date.now() + 1000);
+    const late = (level: string, extra: object = {}) => ({
+      ...row(level, extra),
+      attemptId: partialAttempt,
+      observedAt: partialAt.toISOString(),
+      expiresAt: new Date(partialAt.getTime() + 60000).toISOString(),
+    });
+    await send(late('E5_RTSP_SESSION_NEGOTIATED')).expect(201);
+    expect((await read(recorderChildDeviceId).expect(200)).body).toMatchObject({
+      state: 'INCOMPLETE',
+      measurement: { attemptId: partialAttempt, complete: false },
+    });
+    // The queued E6 arrives later with its original identifiers and timestamps;
+    // a byte-identical resend is idempotent and never refreshes the evidence.
+    const queued = late('E6_FRAMES_RECEIVED', {
+      media: {
+        measurement: 'RTP_VIDEO_PACKETS',
+        count: 3,
+        windowMs: 5000,
+        lastReceivedAt: partialAt.toISOString(),
+      },
+    });
+    expect((await send(queued).expect(201)).body).toEqual({ accepted: 1 });
+    expect((await send(queued).expect(201)).body).toEqual({ accepted: 0 });
+    const completed = (await read(recorderChildDeviceId).expect(200)).body;
+    expect(completed).toMatchObject({
+      state: 'SUCCEEDED',
+      measurement: { attemptId: partialAttempt, complete: true },
+    });
+    expect(completed.measurement.expiresAt).toBe(
+      new Date(partialAt.getTime() + 60000).toISOString(),
+    );
+
+    // Tenant isolation on read; other devices report absence distinctly.
+    await read(foreignDeviceId).expect(404);
+    expect((await read(localDeviceId).expect(200)).body).toMatchObject({
+      state: 'NO_MEASUREMENT',
+      measurement: null,
+    });
+  });
+
   it('rejects missing, invalid and cross-device credentials', async () => {
     const payload = telemetryPayload();
 

@@ -1,0 +1,5 @@
+bucket       = "REPLACE_WITH_PSOP_TERRAFORM_STATE_BUCKET"
+key          = "psop/production/terraform.tfstate"
+region       = "us-east-1"
+use_lockfile = true
+encrypt      = true

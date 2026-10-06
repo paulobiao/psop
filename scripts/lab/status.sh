@@ -97,7 +97,8 @@ if service_running speco; then
 elif ext="$(pgrep -f -U "$(id -u)" 'speco_n8nrl.py' 2>/dev/null)" && [ -n "$ext" ]; then
   row "Speco" "$(st_running)"; detail "pid(s) ${ext//$'\n'/ } (not managed by this lab)"
 elif pid="$(read_pid speco)" && [ -f "$(pidfile speco)" ]; then
-  row "Speco" "$(st_offline)"; detail "tracked pid ${pid} is gone"
+  row "Speco" "$(st_warn "WATCHER NOT RUNNING")"
+  detail "$(speco_stopped_reason "$pid")"
 else
   row "Speco" "$(st_offline)"
   configured_dir="$(speco_runtime_dir_resolve)"

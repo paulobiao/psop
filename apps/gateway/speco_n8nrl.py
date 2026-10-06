@@ -43,6 +43,10 @@ MUTATING_COMMAND_MARKERS = ("edit", "delete", "del", "activate", "reboot", "rese
 class SpecoError(RuntimeError):
     pass
 
+
+class PsopDeliveryError(SpecoError):
+    """A delivery failure whose message is safe to log (no remote text)."""
+
 class SpecoLoginError(SpecoError):
     def __init__(self, message: str, *, error_code: str | None = None,
                  remaining_attempts: int | None = None,
@@ -853,20 +857,17 @@ class PsopRecorderApiClient:
                 body = response.read().decode("utf-8")
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as error:
-            detail = error.read().decode(
-                "utf-8",
-                errors="replace",
-            )
-            raise SpecoError(
-                f"PSOP API returned HTTP {error.code}: {detail}"
+            error.close()
+            raise PsopDeliveryError(
+                f"PSOP_API_HTTP_{int(error.code)}"
             ) from error
         except (
             urllib.error.URLError,
             TimeoutError,
             OSError,
         ) as error:
-            raise SpecoError(
-                f"PSOP API unavailable: {error}"
+            raise PsopDeliveryError(
+                "PSOP_API_UNAVAILABLE"
             ) from error
 
     def send_recorder(
@@ -1431,7 +1432,22 @@ def watch_tick(
                 timeout=timeout,
             )
 
-    delivery = run_psop_once(result, api, mapping)
+    try:
+        delivery = run_psop_once(result, api, mapping)
+    except Exception as error:
+        # Delivery is independent of collection. Never turn an API outage
+        # into recorder/camera offline evidence or re-authenticate for it.
+        # A POST may have succeeded before its response failed; do not claim
+        # nothing was delivered, or replay stale observations immediately.
+        delivery = {
+            "recorderDelivered": None,
+            "childDelivery": "DELIVERY_ERROR",
+            "observationsSent": "unknown",
+            "error": (
+                str(error) if isinstance(error, PsopDeliveryError)
+                else "PSOP_DELIVERY_EXCEPTION"
+            ),
+        }
     if reauth_outcome is not None:
         delivery["reauth"] = reauth_outcome
     return result, delivery
@@ -1512,9 +1528,13 @@ def run_watch_loop(
 
     Each iteration is a self-contained watch_tick: collect NOW, re-auth at
     most once if the recorder looks unreachable, deliver only this tick's
-    data. The loop never exits on a network error or an unreachable recorder;
-    only KeyboardInterrupt (or max_ticks, used by tests) stops it.
+    data. Delivery exceptions are isolated by watch_tick; recorder network
+    failures are represented by collection/relogin outcomes. KeyboardInterrupt
+    stops the loop, and max_ticks bounds it in tests.
     """
+    # One attempt per collection cycle, including during an API outage.
+    # The normal cadence bounds retries without delaying recorder recovery.
+    interval = max(5.0, interval)
     tick = 0
     try:
         while max_ticks is None or tick < max_ticks:
@@ -1538,6 +1558,8 @@ def run_watch_loop(
                 f"children={delivery['observationsSent']} "
                 f"delivery={delivery['childDelivery']}"
                 + (f" reauth={reauth}" if reauth else "")
+                + (f" reason={delivery['error']} retryIn={interval:g}s"
+                   if "error" in delivery else "")
             )
 
             if max_ticks is not None and tick >= max_ticks:

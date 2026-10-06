@@ -81,6 +81,7 @@ export interface FleetDevice {
     protocol: string | null;
     resolution: string | null;
     frameRate: number | null;
+    details: Record<string, unknown> | null;
   } | null;
 }
 
@@ -435,4 +436,49 @@ export interface UpdateNotificationPolicyInput {
   explicitEmails?: string[];
   cooldownMinutes?: number;
   escalationDelayMinutes?: number;
+}
+
+/** Latest recorded stream probe attempt; not connectivity and not recording proof. */
+export type StreamMeasurementState =
+  | "NO_MEASUREMENT"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "INCOMPLETE"
+  | "EXPIRED";
+
+export interface StreamStageOutcome {
+  result: string;
+  reason: string;
+}
+
+export interface DeviceStreamMeasurement {
+  deviceId: string;
+  generatedAt: string;
+  state: StreamMeasurementState;
+  measurement: {
+    attemptId: string | null;
+    /** False when only part of an NVR-mediated attempt reached PSOP. */
+    complete: boolean;
+    observedAt: string;
+    expiresAt: string;
+    freshness: "FRESH" | "STALE";
+    source: string;
+    confidence: string;
+    observer: { id: string; name: string; deviceType: string } | null;
+    access: "DIRECT" | "NVR_MEDIATED" | null;
+    uriSource: string | null;
+    channelNumber: number | null;
+    result: string;
+    reason: string;
+    negotiation: StreamStageOutcome | null;
+    media: Partial<StreamStageOutcome> & {
+      proof: {
+        measurement: "RTP_VIDEO_PACKETS" | "DECODED_VIDEO_FRAMES";
+        count: number;
+        windowMs: number;
+        lastReceivedAt: string;
+      } | null;
+    };
+    decodedFrames: "MEASURED" | "NOT_MEASURED";
+  } | null;
 }

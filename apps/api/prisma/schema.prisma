@@ -61,6 +61,38 @@ enum EdgeAgentDeliveryState {
   ERROR
 }
 
+enum EvidenceKind {
+  OBSERVATION
+  ASSERTION
+}
+
+enum EvidenceSource {
+  DEVICE
+  RECORDER
+  ADAPTER
+  GATEWAY
+  INVENTORY
+  API
+}
+
+enum EvidenceConfidence {
+  DECLARED
+  OBSERVED
+  VERIFIED
+}
+
+enum EvidenceLevel {
+  E0_UNKNOWN
+  E1_ENDPOINT_REACHABLE
+  E2_IDENTITY_OBSERVED
+  E3_PROFILE_DISCOVERED
+  E4_STREAM_URI_OBTAINED
+  E5_SESSION_NEGOTIATED
+  E6_MEDIA_RECEIVED
+  E7_RECORDING_PROVEN
+  E8_RETRIEVAL_PROVEN
+}
+
 model Organization {
   id                     String                 @id @default(uuid()) @db.Uuid
   name                   String
@@ -154,6 +186,8 @@ model Device {
   recorderObservations      RecorderObservationSnapshot[] @relation("RecorderDevice")
   edgeAgentRuntime          EdgeAgentRuntimeSnapshot?
   connectivityEvents        DeviceConnectivityEvent[]
+  evidenceRecords           EvidenceRecord[]              @relation("EvidenceTargetDevice")
+  observedEvidenceRecords   EvidenceRecord[]              @relation("EvidenceObserverDevice")
 
   @@unique([siteId, externalId])
   @@index([siteId])
@@ -161,6 +195,32 @@ model Device {
   @@index([monitoringMode])
   @@index([gatewayDeviceId])
   @@map("devices")
+}
+
+/// Immutable operational evidence. Existing snapshot tables remain the fast
+/// read model; this table is the append-only provenance ledger behind them.
+model EvidenceRecord {
+  id               String             @id @default(uuid()) @db.Uuid
+  deviceId         String             @map("device_id") @db.Uuid
+  device           Device             @relation("EvidenceTargetDevice", fields: [deviceId], references: [id], onDelete: Cascade)
+  observerDeviceId String?            @map("observer_device_id") @db.Uuid
+  observerDevice   Device?            @relation("EvidenceObserverDevice", fields: [observerDeviceId], references: [id], onDelete: SetNull)
+  kind             EvidenceKind
+  source           EvidenceSource
+  confidence       EvidenceConfidence
+  level            EvidenceLevel
+  subject          String
+  observedAt       DateTime           @map("observed_at")
+  receivedAt       DateTime           @default(now()) @map("received_at")
+  expiresAt        DateTime?          @map("expires_at")
+  sourceEventKey   String             @unique @map("source_event_key")
+  payload          Json
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  @@index([deviceId, observedAt(sort: Desc)])
+  @@index([observerDeviceId, observedAt(sort: Desc)])
+  @@index([level, observedAt(sort: Desc)])
+  @@map("evidence_records")
 }
 
 model DeviceIngestionCredential {

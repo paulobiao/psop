@@ -80,3 +80,11 @@ Stop continuous execution with `Control + C`.
 The SQLite buffer remains available during manual execution. If the PSOP API is temporarily unavailable, the latest eligible heartbeat is buffered and delivered after the API returns while the gateway process is still running.
 
 See `docs/GATEWAY_MANUAL_OPERATION.md`.
+
+## Video assurance contracts
+
+The E4–E6 shared contract and URI sanitizer are documented in [Video Assurance Foundation](../../docs/VIDEO_ASSURANCE_FOUNDATION.md). Existing RTSP reachability probes (`psop_gateway.py`) do not establish E5 or E6. E5/E6 collection exists as optional foreground tools (below): RTSP negotiation plus counted video RTP packets, with no media stored or decoded (`decodedFrames=NOT_MEASURED`). ONVIF discovery (E4) exists only in the manual single-camera probe; the NVR-mediated path uses an operator-supplied URI and never produces E4.
+
+## Stream evidence (optional)
+
+Manual and periodic NVR-mediated RTSP checks (E5/E6, no E4, RTP packets only) are documented in `STREAM_PROBE.md` (`nvr_rtsp_check.py`, `stream_scheduler.py`). They are foreground tools, never services, and do not affect heartbeats.
